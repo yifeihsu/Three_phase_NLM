@@ -1,0 +1,125 @@
+#!/usr/bin/env python3
+import numpy as np
+from scipy.sparse import diags, coo_matrix
+
+def dSbr_dV1(Yf, Yt, V, nb, nl, f, t):
+    """
+    Computes partial derivatives of branch power flows with respect to voltage
+    in polar coordinates. This is a Python translation of the given MATLAB code.
+    
+    Parameters
+    ----------
+    Yf : (nl, nb) array_like or sparse matrix
+        'From' branch admittance matrix.
+    Yt : (nl, nb) array_like or sparse matrix
+        'To' branch admittance matrix.
+    V : (nb,) array_like
+        Bus voltage vector (complex values).
+    nb : int
+        Number of buses.
+    nl : int
+        Number of lines/branches.
+    f : array_like of int, shape (nl,)
+        'From' bus indices for each branch (0-indexed).
+    t : array_like of int, shape (nl,)
+        'To' bus indices for each branch (0-indexed).
+    
+    Returns
+    -------
+    dSf_dV1 : sparse matrix (nl x nb)
+        Partial derivative of branch power flow at the “from” end with respect to voltage angles.
+    dSf_dV2 : sparse matrix (nl x nb)
+        Partial derivative of branch power flow at the “from” end with respect to voltage magnitudes.
+    dSt_dV1 : sparse matrix (nl x nb)
+        Partial derivative of branch power flow at the “to” end with respect to voltage angles.
+    dSt_dV2 : sparse matrix (nl x nb)
+        Partial derivative of branch power flow at the “to” end with respect to voltage magnitudes.
+    Sf : ndarray, shape (nl,)
+        Branch power flow at the “from” end.
+    St : ndarray, shape (nl,)
+        Branch power flow at the “to” end.
+    """
+    # Compute conjugates
+    Yfc = np.conjugate(Yf)
+    Ytc = np.conjugate(Yt)
+    Vc = np.conjugate(V)
+    
+    # Compute branch currents (using conjugated admittance matrices)
+    Ifc = Yfc.dot(Vc)
+    Itc = Ytc.dot(Vc)
+    
+    # Create sparse diagonal matrices for branch voltages and currents.
+    # (V[f] and V[t] extract the branch “from” and “to” voltages.)
+    diagVf  = diags(V[np.array(f)], 0, shape=(nl, nl), format='csr')
+    diagVt  = diags(V[np.array(t)], 0, shape=(nl, nl), format='csr')
+    diagIfc = diags(Ifc, 0, shape=(nl, nl), format='csr')
+    diagItc = diags(Itc, 0, shape=(nl, nl), format='csr')
+    
+    # Create sparse diagonal matrix for bus voltage conjugate
+    diagVc = diags(Vc, 0, shape=(nb, nb), format='csr')
+    
+    # Voltage normalization: Vnorm = V ./ abs(V)
+    Vnorm = V / np.abs(V)
+    diagVnorm = diags(Vnorm, 0, shape=(nb, nb), format='csr')
+    
+    # Build connection matrices that pick out the bus values corresponding to each branch.
+    # In MATLAB: CVf = sparse(1:nl, f, V(f), nl, nb);
+    rows = np.arange(nl)
+    f = np.array(f)  # ensure indices are NumPy arrays
+    t = np.array(t)
+    CVf  = coo_matrix((V[f], (rows, f)), shape=(nl, nb)).tocsr()
+    CVnf = coo_matrix((Vnorm[f], (rows, f)), shape=(nl, nb)).tocsr()
+    CVt  = coo_matrix((V[t], (rows, t)), shape=(nl, nb)).tocsr()
+    CVnt = coo_matrix((Vnorm[t], (rows, t)), shape=(nl, nb)).tocsr()
+    
+    # Compute the partial derivatives.
+    # dSf_dV1 corresponds to the derivative with respect to voltage angles.
+    dSf_dV1 = 1j * (diagIfc.dot(CVf) - diagVf.dot(Yfc).dot(diagVc))
+    
+    # dSf_dV2 corresponds to the derivative with respect to voltage magnitudes.
+    # Note: Yf * diag(Vnorm) in MATLAB is computed as a matrix product.
+    # Here we assume Yf and Yt are dense; if they are sparse, adjust accordingly.
+    dSf_dV2 = (diagVf.dot(np.conjugate(Yf.dot(diagVnorm.toarray()))) +
+               diagIfc.dot(CVnf))
+    
+    dSt_dV1 = 1j * (diagItc.dot(CVt) - diagVt.dot(Ytc).dot(diagVc))
+    dSt_dV2 = (diagVt.dot(np.conjugate(Yt.dot(diagVnorm.toarray()))) +
+               diagItc.dot(CVnt))
+    
+    # Compute branch power flows.
+    # (Element-wise multiplication: for each branch, Sf = V[from] * Ifc)
+    Sf = V[f] * Ifc
+    St = V[t] * Itc
+    
+    return dSf_dV1, dSf_dV2, dSt_dV1, dSt_dV2, Sf, St
+
+
+# --- Optional: A simple test/example when running the script directly ---
+if __name__ == '__main__':
+    # Example data (for testing purposes)
+    nb = 3       # number of buses
+    nl = 2       # number of branches/lines
+
+    # Create example 'from' and 'to' branch admittance matrices (dense)
+    Yf = np.array([[1+1j, 0,   0],
+                   [0,   1+2j, 0]], dtype=complex)
+    Yt = np.array([[0,   1-1j, 0],
+                   [0,   0,   1+1j]], dtype=complex)
+    
+    # Example bus voltage vector (complex)
+    V = np.array([1.0+0j, 0.98-0.05j, 1.02+0.03j], dtype=complex)
+    
+    # Branch connections (0-indexed)
+    f = [0, 1]  # "from" bus for each branch
+    t = [1, 2]  # "to" bus for each branch
+    
+    # Call the function
+    dSf_dV1, dSf_dV2, dSt_dV1, dSt_dV2, Sf, St = dSbr_dV1(Yf, Yt, V, nb, nl, f, t)
+    
+    # Display the results (converted to dense arrays for viewing)
+    print("dSf_dV1:\n", dSf_dV1.toarray())
+    print("dSf_dV2:\n", dSf_dV2.toarray())
+    print("dSt_dV1:\n", dSt_dV1.toarray())
+    print("dSt_dV2:\n", dSt_dV2.toarray())
+    print("Sf:\n", Sf)
+    print("St:\n", St)
