@@ -2,19 +2,15 @@ import numpy as np
 import opendssdirect as dss
 from scipy.sparse import csc_matrix, lil_matrix
 
-
-def build_global_y_per_unit(line_changes=None):
+def build_global_y_per_unit():
     """
-    Builds the global Y matrix in per-unit for lines, transformers, 
-    and voltage sources, but excludes loads/generators.
+    Builds the global Y matrix in per-unit for lines, transformers, but excludes loads/generators.
     Returns:
         Y_pu (csc_matrix): The system admittance matrix in per-unit
         node_order (list of str): the global node names in the same order 
                                   as the rows/columns of Y_pu
     """
-    if line_changes is None:
-        line_changes = {}
-    # 1) Gather all node names from the circuit
+    ## Revise the mapping order here, use similar method in parse_opendss_to_mpc we discussed previously
     all_nodes = dss.Circuit.AllNodeNames()  # e.g. ["bus1.1", "bus1.2", ...]
     # We'll make a dictionary mapping node_name -> row/col index
     node_index_map = {}
@@ -54,97 +50,96 @@ def build_global_y_per_unit(line_changes=None):
         # bottom-right
         y6[3:6, 3:6] = y3
         return y6
-
-    def modify_line_admittance_3x3(y3, param_label, factor):
-        """
-        Scale exactly one parameter in the 3x3 block by `factor`.
-        The parameter label indicates:
-          - which phase/phase-pair (phase_a, phase_b, phase_c, phase_ab, etc.)
-          - which component: "_g" for real part (G), "_b" for imaginary part (B).
-
-        e.g. 'phase_a_g' => scale only the real part of phase A self-admittance
-             'phase_ab_b' => scale only the imaginary part of mutual A-B admittance
-        """
-        y3_mod = y3.copy()
-
-        # A helper to scale only the real part for (r,c) and (c,r)
-        def scale_symmetric_real(mat, r, c, fac):
-            # top-left is mat[r,c]
-            old_val = mat[r, c]
-            new_val = complex(old_val.real * fac, old_val.imag)
-            mat[r, c] = new_val
-            # mirror, not necessary symmetric if transformers
-            if r != c:
-                old_val2 = mat[c, r]
-                new_val2 = complex(old_val2.real * fac, old_val2.imag)
-                mat[c, r] = new_val2
-                dval = new_val2 - old_val2
-                if abs(dval) > 1e-12:
-                    mat[c, c] -= dval
-                    mat[r, r] -= dval
-
-        def scale_symmetric_imag(mat, r, c, fac):
-            old_val = mat[r, c]
-            new_val = complex(old_val.real, old_val.imag * fac)
-            mat[r, c] = new_val
-            # mirror
-            if r != c:
-                old_val2 = mat[c, r]
-                new_val2 = complex(old_val2.real, old_val2.imag * fac)
-                mat[c, r] = new_val2
-                dval = new_val2 - old_val2
-                if abs(dval) > 1e-12:
-                    mat[c, c] -= dval
-                    mat[r, r] -= dval
-
-        # 1) Parse the label: e.g. "phase_ab_g" => location "phase_ab", component "g"
-        plow = param_label.lower().strip()
-        # separate the location part (phase_a / phase_ab / etc.) from _g or _b
-        # For instance, "phase_ab_g" => location_str="phase_ab", comp_str="g"
-        if plow.endswith('_g'):
-            comp_str = 'g'
-            location_str = plow[:-2]  # remove trailing "_g"
-        elif plow.endswith('_b'):
-            comp_str = 'b'
-            location_str = plow[:-2]  # remove trailing "_b"
-        else:
-            # If it doesn't match the pattern, do nothing
-            return y3_mod
-
-        # 2) Identify which indices to apply
-        # Diagonal indices for self phases:
-        #   A->(0,0), B->(1,1), C->(2,2)
-        # Off-diagonal pairs for mutual:
-        #   AB->(0,1)/(1,0), BC->(1,2)/(2,1), AC->(0,2)/(2,0)
-        def scale_self_phase(phase_idx):
-            if comp_str == 'g':
-                scale_symmetric_real(y3_mod, phase_idx, phase_idx, factor)
-            else:  # comp_str == 'b'
-                scale_symmetric_imag(y3_mod, phase_idx, phase_idx, factor)
-        # Now assume that the parameters of two terminals will all change for the mutual impedance
-        def scale_mutual_phases(r, c):
-            if comp_str == 'g':
-                scale_symmetric_real(y3_mod, r, c, factor)
-            else:
-                scale_symmetric_imag(y3_mod, r, c, factor)
-
-        if location_str == 'phase_a':
-            scale_self_phase(0)
-        elif location_str == 'phase_b':
-            scale_self_phase(1)
-        elif location_str == 'phase_c':
-            scale_self_phase(2)
-        elif location_str == 'phase_ab':
-            scale_mutual_phases(0, 1)
-        elif location_str == 'phase_bc':
-            scale_mutual_phases(1, 2)
-        elif location_str == 'phase_ac':
-            scale_mutual_phases(0, 2)
-        else:
-            # Unrecognized location => do nothing
-            pass
-
-        return y3_mod
+    # def modify_line_admittance_3x3(y3, param_label, factor):
+    #     """
+    #     Scale exactly one parameter in the 3x3 block by `factor`.
+    #     The parameter label indicates:
+    #       - which phase/phase-pair (phase_a, phase_b, phase_c, phase_ab, etc.)
+    #       - which component: "_g" for real part (G), "_b" for imaginary part (B).
+    #
+    #     e.g. 'phase_a_g' => scale only the real part of phase A self-admittance
+    #          'phase_ab_b' => scale only the imaginary part of mutual A-B admittance
+    #     """
+    #     y3_mod = y3.copy()
+    #
+    #     # A helper to scale only the real part for (r,c) and (c,r)
+    #     def scale_symmetric_real(mat, r, c, fac):
+    #         # top-left is mat[r,c]
+    #         old_val = mat[r, c]
+    #         new_val = complex(old_val.real * fac, old_val.imag)
+    #         mat[r, c] = new_val
+    #         # mirror, not necessary symmetric if transformers
+    #         if r != c:
+    #             old_val2 = mat[c, r]
+    #             new_val2 = complex(old_val2.real * fac, old_val2.imag)
+    #             mat[c, r] = new_val2
+    #             dval = new_val2 - old_val2
+    #             if abs(dval) > 1e-12:
+    #                 mat[c, c] -= dval
+    #                 mat[r, r] -= dval
+    #
+    #     def scale_symmetric_imag(mat, r, c, fac):
+    #         old_val = mat[r, c]
+    #         new_val = complex(old_val.real, old_val.imag * fac)
+    #         mat[r, c] = new_val
+    #         # mirror
+    #         if r != c:
+    #             old_val2 = mat[c, r]
+    #             new_val2 = complex(old_val2.real, old_val2.imag * fac)
+    #             mat[c, r] = new_val2
+    #             dval = new_val2 - old_val2
+    #             if abs(dval) > 1e-12:
+    #                 mat[c, c] -= dval
+    #                 mat[r, r] -= dval
+    #
+    #     # 1) Parse the label: e.g. "phase_ab_g" => location "phase_ab", component "g"
+    #     plow = param_label.lower().strip()
+    #     # separate the location part (phase_a / phase_ab / etc.) from _g or _b
+    #     # For instance, "phase_ab_g" => location_str="phase_ab", comp_str="g"
+    #     if plow.endswith('_g'):
+    #         comp_str = 'g'
+    #         location_str = plow[:-2]  # remove trailing "_g"
+    #     elif plow.endswith('_b'):
+    #         comp_str = 'b'
+    #         location_str = plow[:-2]  # remove trailing "_b"
+    #     else:
+    #         # If it doesn't match the pattern, do nothing
+    #         return y3_mod
+    #
+    #     # 2) Identify which indices to apply
+    #     # Diagonal indices for self phases:
+    #     #   A->(0,0), B->(1,1), C->(2,2)
+    #     # Off-diagonal pairs for mutual:
+    #     #   AB->(0,1)/(1,0), BC->(1,2)/(2,1), AC->(0,2)/(2,0)
+    #     def scale_self_phase(phase_idx):
+    #         if comp_str == 'g':
+    #             scale_symmetric_real(y3_mod, phase_idx, phase_idx, factor)
+    #         else:  # comp_str == 'b'
+    #             scale_symmetric_imag(y3_mod, phase_idx, phase_idx, factor)
+    #     # Now assume that the parameters of two terminals will all change for the mutual impedance
+    #     def scale_mutual_phases(r, c):
+    #         if comp_str == 'g':
+    #             scale_symmetric_real(y3_mod, r, c, factor)
+    #         else:
+    #             scale_symmetric_imag(y3_mod, r, c, factor)
+    #
+    #     if location_str == 'phase_a':
+    #         scale_self_phase(0)
+    #     elif location_str == 'phase_b':
+    #         scale_self_phase(1)
+    #     elif location_str == 'phase_c':
+    #         scale_self_phase(2)
+    #     elif location_str == 'phase_ab':
+    #         scale_mutual_phases(0, 1)
+    #     elif location_str == 'phase_bc':
+    #         scale_mutual_phases(1, 2)
+    #     elif location_str == 'phase_ac':
+    #         scale_mutual_phases(0, 2)
+    #     else:
+    #         # Unrecognized location => do nothing
+    #         pass
+    #
+    #     return y3_mod
     def get_local_node_names():
         """
         Returns a list of fully qualified node names for the active circuit element.
@@ -218,17 +213,17 @@ def build_global_y_per_unit(line_changes=None):
         for i in range(0, len(yprim_flat), 2):
             cplx_list.append(yprim_flat[i] + 1j*yprim_flat[i+1])
         arr = np.array(cplx_list)
-        n_local = int(np.sqrt(len(cplx_list)))  # should be 6
+        n_local = int(np.sqrt(len(cplx_list)))  # should be 6 (two-terminal)
         y6_orig = arr.reshape((n_local, n_local))
 
         # Extract 3x3 top-left
         y3_tl = extract_3x3_core_from_6x6(y6_orig)
 
-        # Check if we have changes for this line
-        line_key = line_name.lower()
-        if line_key in line_changes:
-            for param_label, factor in line_changes[line_key].items():
-                y3_tl = modify_line_admittance_3x3(y3_tl, param_label, factor)
+        # # Check if we have changes for this line
+        # line_key = line_name.lower()
+        # if line_key in line_changes:
+        #     for param_label, factor in line_changes[line_key].items():
+        #         y3_tl = modify_line_admittance_3x3(y3_tl, param_label, factor)
 
         # Rebuild symmetrical 6x6
         y6_mod = build_symmetric_6x6_from_3x3(y3_tl)
@@ -247,9 +242,6 @@ def build_global_y_per_unit(line_changes=None):
         n_local = int(np.sqrt(len(cplx_list)))
         yprim_matrix = yprim_array.reshape((n_local, n_local))
         stamp_yprim(yprim_matrix, local_nodes)
-    # (Optionally, we could also stamp capacitors, etc., if they exist
-    #  but skip loads and generators as requested.)
-
     # 4) Now we have Y_global in physical units (Siemens). 
     #    We want to convert it to per-unit. Each node may have a different base voltage.
 
