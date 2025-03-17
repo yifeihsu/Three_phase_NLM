@@ -2,6 +2,8 @@ import numpy as np
 from utilities.mea_fun import measurement_function
 from utilities.make_jacobian import jacobian
 from utilities.make_jacobian_p import jacobian_line_params
+import scipy.sparse as sps
+from scipy.sparse.linalg import spsolve
 
 def find_zero_injection_nodes(mpc, busphase_map, tol=1.0):
     """
@@ -43,18 +45,18 @@ def find_zero_injection_nodes(mpc, busphase_map, tol=1.0):
         if PdA > 1e-9:  # Some small threshold
             # QdA = PdA * np.sqrt(1/(pfA**2) - 1) if pfA < 1.0 else 0.0
             # Subtract from net injection
-            netPQ_phase[(bus_id, 0)][0] -= -PdA
-            netPQ_phase[(bus_id, 0)][1] -= -QdA
+            netPQ_phase[(bus_id, 0)][0] += PdA
+            netPQ_phase[(bus_id, 0)][1] += QdA
 
         # Phase B
         if PdB > 1e-9:
-            netPQ_phase[(bus_id, 1)][0] -= -PdB
-            netPQ_phase[(bus_id, 1)][1] -= -QdB
+            netPQ_phase[(bus_id, 1)][0] += PdB
+            netPQ_phase[(bus_id, 1)][1] += QdB
 
         # Phase C
         if PdC > 1e-9:
-            netPQ_phase[(bus_id, 2)][0] -= -PdC
-            netPQ_phase[(bus_id, 2)][1] -= -QdC
+            netPQ_phase[(bus_id, 2)][0] += PdC
+            netPQ_phase[(bus_id, 2)][1] += QdC
 
     # 5) Process generations (add to net injection)
     #    gen3p => [genid, gbus, status, VgA, VgB, VgC, PgA, PgB, PgC, QgA, QgB, QgC]
@@ -81,21 +83,17 @@ def find_zero_injection_nodes(mpc, busphase_map, tol=1.0):
     zero_inj_nodes = []
     for (b, ph) in netPQ_phase.keys():
         if b == slack_id:
-            continue  # skip slack bus
+            continue  # skip slack bus, we are loading original data rather than PF results
         p_net, q_net = netPQ_phase[(b, ph)]
-        # if near zero => mark node as zero injection
+        # Avoid floating point errors
         if (abs(p_net) < tol) and (abs(q_net) < tol):
-            # Convert (bus, phase) to global node index
-            # e.g. busphase_map[(bus_id, 0..2)]
             node_idx = busphase_map[(b, ph)]
             zero_inj_nodes.append(node_idx)
-
     return zero_inj_nodes
 
 def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol=1e-6):
     """
-    DSSE solver using polar coordinates for the state.
-    The state vector x = [Vm(0..N-1), Va(0..N-1)] in p.u. and radians.
+    DSSE solver using polar coordinates.
     Args:
       z : 1D numpy array of measurements (size m)
       x_init : initial guess (2*nnodephase),
@@ -105,11 +103,13 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
       Ybus : NxN complex bus admittance matrix
       R : measurement covariance or weighting matrix, shape (m,m)
       max_iter, tol : iteration settings
-
     Returns:
       x_est : final estimated state in polar => [V_m(0..N-1), Va(0..N-1)]
       success : boolean
     """
+    ########################################################
+    # Data Preparation
+    ########################################################
     nbus = len(mpc["bus3p"])
     nnodephase = len(busphase_map)
     nstate = 2 * nnodephase
@@ -147,7 +147,6 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     tbus = np.concatenate([tbus_self, tbus_mut])
     npara_x = len(fbus)  # total X-parameters for all lines
     npara   = 2 * npara_x  # double to account for R-parameters
-    # npara = len(mpc["line3p"]) * 3
     x_init = np.zeros(nstate)
     # x_init[nnodephase:] angles in radians, three phases 0, -120, 120 --> 0, -2pi/3, 2pi/3
     for i in range(nbus):
@@ -168,12 +167,11 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
         # Q row => i_node + nnodephase
         indices_to_remove.append(i_node)
         indices_to_remove.append(i_node + nnodephase)
-    # Remove the zero injection buses from the W matrix
     W = np.delete(W, indices_to_remove, axis=0)
     W = np.delete(W, indices_to_remove, axis=1)
-    # Remove the zero injection buses from the z vector
+    W_sp = sps.csr_matrix(W)
     z = np.delete(z, indices_to_remove)
-
+    # Assuming only one slack bus (3-phases setting)
     xl = np.zeros(2*nnodephase - 3 + 3 * nnodephase, dtype=float)
     for i in range(nnodephase):
         xl[3*i] = 1
@@ -182,90 +180,7 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
         xl[3*i + nnodephase + 1] = np.deg2rad(-120)
         xl[3*i + 2] = 1
         xl[3*i + nnodephase + 2] = np.deg2rad(120)
-    ########################################################
-    # Auxiliary functions
-    # def measurement_function(x):
-    #     """
-    #     Build measurement vector h(x) in the same order as z.
-    #     """
-    #     half = nnodephase
-    #     Vm = x[:half]
-    #     Va = x[half:]
-    #     # Build complex voltages in polar
-    #     V = Vm * np.exp(1j*Va)  # shape (N,)
-    #     # Bus injection => S = V * conj(Ybus * V)
-    #     Ibus = Ybus @ V
-    #     Sbus = V * np.conjugate(Ibus)  # Nx1 complex
-    #     # Now build h in the same 3*N layout
-    #     m = 3*nnodephase
-    #     h = np.zeros(m, dtype=float)
-    #     for i in range(nnodephase):
-    #         h[i] = Sbus[i].real
-    #         h[i + nnodephase] = Sbus[i].imag
-    #         h[i + 2*nnodephase] = Vm[i]
-    # #     return h
-    #
-    # def dsbus_polar(Ybus, V, Vm):
-    #     """
-    #     Returns (dSbus_dVa, dSbus_dVm) for polar coords.
-    #       Ibus = Ybus*V
-    #       Sbus = diag(V) * conj(Ibus)
-    #     Then in polar coords:
-    #       dSbus/dVa = j * diag(V) * conj( Ibus - Ybus*diag(V) )
-    #       dSbus/dVm = diag(V) * conj( Ybus * diag(V./abs(V)) ) + conj(diag(Ibus)) * diag(V./abs(V))
-    #     Because we store V[i] = Vm[i]* exp(j Va[i]), and abs(V[i])=Vm[i].
-    #     """
-    #     Ibus = Ybus @ V
-    #     diagV = np.diag(V)
-    #     diagI = np.diag(Ibus)
-    #     # dSbus_dVa = j * diag(V) * conj( diag(Ibus) - Ybus*diag(V) )
-    #     # dSbus_dVm = diag(V) * conj( Ybus* diag(Vnorm) ) + conj(diag(Ibus)) * diag(Vnorm)
-    #     #  where Vnorm = V/abs(V)
-    #     Vnorm = V / Vm
-    #     # partial w.r.t. Va
-    #     term = diagI - (Ybus @ np.diag(V))
-    #     dSbus_dVa = 1j * diagV @ np.conjugate(term)
-    #
-    #     # partial w.r.t. Vm
-    #     tmp1 = diagV @ np.conjugate(Ybus @ np.diag(Vnorm))
-    #     tmp2 = np.conjugate(diagI) @ np.diag(Vnorm)
-    #     dSbus_dVm = tmp1 + tmp2
-    #
-    #     return dSbus_dVa, dSbus_dVm
-    #
-    # def jacobian(x):
-    #     """
-    #     Analytical partial derivatives in *polar* coords.
-    #     """
-    #     half = nnodephase
-    #     Vm = x[:half]
-    #     Va = x[half:]
-    #     V = Vm * np.exp(1j*Va)  # shape (N,)
-    #     dSbus_dVa, dSbus_dVm = dsbus_polar(Ybus, V, Vm)
-    #
-    #     # We'll fill H in shape (3N x 2N)
-    #     m = 3*nnodephase
-    #     H = np.zeros((m, 2*nnodephase), dtype=float)
-    #     for i in range(nnodephase):
-    #         # row P_inj
-    #         rowP = i
-    #         # partial wrt Va => real( dSbus_dVa[i,:] ), stored in columns [N..2N-1], offset by "phase" index
-    #         # but we define columns: first half => d/dVm, second half => d/dVa
-    #         # => So partial w.r.t. Va is in columns [half..2*half]
-    #         # partial w.r.t. Vm is in columns [0..half]
-    #         # => P_inj => real( dSbus_dVa[i,j] ), real(dSbus_dVm[i,j])
-    #         H[rowP, :half] = np.real(dSbus_dVm[i, :])
-    #         H[rowP, half:] = np.real(dSbus_dVa[i, :])
-    #
-    #         # row Q_inj
-    #         rowQ = i + nnodephase
-    #         H[rowQ, :half] = np.imag(dSbus_dVm[i, :])
-    #         H[rowQ, half:] = np.imag(dSbus_dVa[i, :])
-    #
-    #         # row Vmag
-    #         rowV = i + 2*nnodephase
-    #         H[rowV, i] = 1.0
-    #     return H
+
     def print_estimation_results(x_est, mpc):
         """
         Prints the 3-phase bus data in a structured format.
@@ -302,54 +217,96 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
                   f"{Vm_B:>7.4f}  {Va_B:>7.2f}  {Vm_C:>7.4f}  {Va_C:>7.2f}")
     ########################################################
     # Start iteration
+    ########################################################
     success = True
     x_current = x_est.copy()
     for it in range(max_iter):
+        # 1) Compute the measurement function and its Jacobian
         hval = measurement_function(x_current, Ybus, mpc, busphase_map)
-        print("Forming Jacobian")
+        print("Start forming Jacobian")
         Hmat = jacobian(x_current, Ybus, mpc, busphase_map)
-        print("Forming Jacobian Finished.")
-        # Delete the columns corresponding to V_ang_{1,2,3} from H as they are set as the slack bus
-        Hmat = np.delete(Hmat, [nnodephase, nnodephase+ 1, nnodephase + 2], axis=1)
+        print("Jacobian formed")
+
+        # 2) Remove slack-bus angle columns (3 angles for 3-phase slack)
+        slack_cols = [nnodephase, nnodephase + 1, nnodephase + 2]
+        all_cols = np.arange(Hmat.shape[1])
+        keep_cols = np.delete(all_cols, slack_cols)
+        Hmat = Hmat[:, keep_cols]  # keep all rows, subset columns
+
+        # 3) Remove zero-injection rows
+        #    We'll first gather them in "C" for constraints:
         C = Hmat[indices_to_remove, :]
-        Hmat = np.delete(Hmat, indices_to_remove, axis=0)
+
+        #    Then keep the rest in Hmat
+        all_rows = np.arange(Hmat.shape[0])
+        keep_rows = np.delete(all_rows, indices_to_remove)
+        Hmat = Hmat[keep_rows, :]
+
+        # 4) Now Hmat and C are sparse. If you want them in CSR format:
+        H_sp = Hmat.tocsr()  # ensure it's still CSR after slicing
+        C_sp = C.tocsr()
+
+        # 2) Remove columns for the slack bus angles (example: angles # nnodephase, nnodephase+1, nnodephase+2)
         cval = hval[indices_to_remove]
         hval = np.delete(hval, indices_to_remove)
-        # Form the coefficient matrix
-        #     Gain = [zeros(2*nnodephase-3), H'*W, C';
-        #         H, eye(size(H, 1)), zeros(size(H, 1), size(C, 1));
-        #         C, zeros(size(C, 1), size(H, 1)), zeros(size(C, 1))];
-        # Form the Gain matrix
-        nH, nX = Hmat.shape  # Dimensions of H
-        nC = C.shape[0]  # Number of constraints
 
-        # Define submatrices
-        zero_block = np.zeros((2 * nnodephase - 3, 2 * nnodephase - 3))  # Zero matrix
-        H_W = Hmat.T @ W  # H' * W
-        identity_H = np.eye(nH)  # Identity matrix same size as H
+        # 4) Form residual vector r = [zeros_for_lagrange; (z - h); -cval]
+        r_meas = z - hval
+        r = np.concatenate(( np.zeros(2*nnodephase - 3), r_meas, -cval ))
 
-        # Construct full Gain matrix
-        Gain = np.block([
-            [zero_block, H_W, C.T],  # First row
-            [Hmat, identity_H, np.zeros((nH, nC))],  # Second row
-            [C, np.zeros((nC, nH)), np.zeros((nC, nC))]  # Third row
-        ])
+        # ---------------------------------------------------------------------
+        #   SPARSE CHANGES HERE
+        # ---------------------------------------------------------------------
+        # Convert Hmat, C into sparse. "csr_matrix" is usually a good default.
 
-        r = z - hval
-        # r = [zeros(2*nb-1, 1); r; -cx];
-        r = np.concatenate((np.zeros(2*nnodephase-3), r, -cval))
-        # Solve the linear system
-        lhs = Gain
-        rhs = r
+        # We'll need an identity matrix matching Hmat's row count:
+        nH = H_sp.shape[0]
+        I_H_sp = sps.eye(nH, format='csr')
+
+        # Make a zero block for the top-left corner: shape (2*nnodephase-3, 2*nnodephase-3)
+        size_top = 2*nnodephase - 3
+        zero_block_sp = sps.csr_matrix((size_top, size_top))
+
+        # "H_W" = H' * W, but we need W in sparse as well
+        # If W_sp is your weighting matrix, do:
+        H_W_sp = H_sp.transpose().dot(W_sp)
+
+        # For the third block dimension:
+        nC = C_sp.shape[0]
+
+        # Next we form the big "Gain" matrix in block-sparse form:
+        #      [  0          H'W         C'
+        #        H           I          0
+        #        C           0          0  ]
+        #
+        # Use "scipy.sparse.bmat" for block assembly:
+        Gain = sps.bmat([
+            [ zero_block_sp, H_W_sp,     C_sp.transpose() ],
+            [ H_sp,          I_H_sp,     None             ],
+            [ C_sp,          None,       None             ]
+        ], format='csr')
+
+        # 5) Solve the linear system "Gain * dxl = r" via a sparse solver:
         try:
-            dxl = np.linalg.solve(lhs, rhs)
-            dx = dxl[:2*nnodephase-3]
-        except np.linalg.LinAlgError:
+            print("Start solving the linear system")
+            dxl = spsolve(Gain, r)  # dxl is 1D numpy array
+            print("Linear system solved")
+        except sps.linalg.MatrixRankWarning:
+            # or sps.linalg.ArpackNoConvergence, or catch linalg.LinAlgError, etc.
             success = False
+            print("Sparse solver encountered a rank or convergence issue.")
             break
+
+        # 6) Extract dx from dxl
+        # The first part of dxl corresponds to the "2*nnodephase - 3" states,
+        # which we then map back into dx0 with zeros for the slack bus angles
+        dx = dxl[:size_top]
         dx0 = np.zeros(2*nnodephase)
+        # put dx into the correct spots for magnitude and angle (excluding the 3 slack angles)
         dx0[:nnodephase] = dx[:nnodephase]
         dx0[nnodephase+3:] = dx[nnodephase:]
+
+        # Update x_current
         x_current += dx0
         print_estimation_results(x_current, mpc)
         # Print the max dx

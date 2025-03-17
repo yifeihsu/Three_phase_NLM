@@ -34,9 +34,9 @@ def main():
     # 4) Generate the measurement data from PF results (Add noise)
     Y_pu_s, _ = build_global_y_per_unit(mpc, "Master.dss")
     z = measurement_function(x, Y_pu_s, mpc, busphase_map)
-    std_P = 0.001
-    std_Q = 0.001
-    std_V = 0.0001
+    std_P = 0.0001
+    std_Q = 0.0001
+    std_V = 0.00001
     nnodephase = len(busphase_map)
     num_P_inj = nnodephase
     num_Q_inj = nnodephase
@@ -45,26 +45,16 @@ def main():
     covariance_matrix = np.diag([std_P**2]*num_P_inj + [std_Q**2]*num_Q_inj + [std_P**2]*num_PQ_flow + [std_V**2]*num_Vmag)
     # Print the shape of the covariance matrix
     print("Covariance matrix shape:", covariance_matrix.shape)
-    # z_noisy = z + np.random.multivariate_normal(np.zeros(len(z)), covariance_matrix)
+    z_noisy = z + np.random.normal(0, np.sqrt(np.diag(covariance_matrix)), size=len(z))
     x_est, success, lambdaN = run_lagrangian_polar(
-    z, x_f, busphase_map, Y_pu_s, covariance_matrix, mpc
+    z_noisy, x_f, busphase_map, Y_pu_s, covariance_matrix, mpc
     )
-    # #
+
+    # # NLM Test for different lines
     # dss.run_command('Redirect "4Bus-YY-Bal1.DSS"')
-    # dss.Solution.Solve()
-    #
+    
     # linecode_name = "Kersting"
-    # # read the existing linecode object from DSS
-    # # we can parse "?" queries or do a direct approach:
-    #
-    # # if the linecode is loaded, let's retrieve the Xmatrix as a string
-    # # This might require some DSS property calls, but for simplicity, we do an 'Edit linecode...' approach:
-    # # We'll do a direct override approach.
-    #
-    # # We'll just define a new Xmatrix if we want to do exactly 10× the first diagonal:
-    # # Suppose the old Xmatrix = [1.07805 | 0.501679 1.04818 | 0.384938 0.423653 1.06507]
-    # # We'll read the old values from the 'mpc["lc"]' or from the openDSS if you prefer. Let's do from the old array:
-    #
+    
     # old_xmatrix = [
     #    1.07805,      # Xaa
     #    0.501679, 1.04818,
@@ -72,27 +62,24 @@ def main():
     # ]
     # # Multiply the first entry (Xaa) by 10:
     # old_xmatrix[0] *= 10.0  # => 1.07805 => 10.7805
-    #
+    
     # # re-build a string for Xmatrix
     # # Xmatrix in DSS is typically bracketed as [Xaa  | Xab Xbb  | Xac Xbc Xcc ]
-    # # We'll do something like: "[10.7805 | 0.501679 1.04818 | 0.384938 0.423653 1.06507]"
     # xmat_str = f"[{old_xmatrix[0]:.6f} | {old_xmatrix[1]:.6f} {old_xmatrix[2]:.6f} | {old_xmatrix[3]:.6f} {old_xmatrix[4]:.6f} {old_xmatrix[5]:.6f}]"
-    #
+    
     # # Now we do an Edit linecode command
     # cmd = f'Edit linecode.{linecode_name} Xmatrix={xmat_str}'
     # dss.run_command(cmd)
     # # print("Modified linecode Kersting Xmatrix =>", xmat_str)
-    # #
-    # # # Now solve again so that the openDSS model uses the new X
     # # dss.Solution.Solve()
     # Y_pu, _ = build_global_y_per_unit(line_changes=None)
-    # # tmp1 = np.array(Y_pu_s.todense())
-    # # tmp2 = np.array(Y_pu.todense())
-    # # diff = np.abs(tmp1 - tmp2)
+    # tmp1 = np.array(Y_pu_s.todense())
+    # tmp2 = np.array(Y_pu.todense())
+    # diff = np.abs(tmp1 - tmp2)
     # x_est, success, lambdaN = run_lagrangian_polar(
     #     z_noisy, x_f, busphase_map, Y_pu, covariance_matrix, mpc
     # )
-    #
+    
     # # 6) find the largest index
     # largest_idx = np.argmax(np.abs(lambdaN))
     # # largest_val = lambdaN[largest_idx]
