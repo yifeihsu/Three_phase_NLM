@@ -14,7 +14,7 @@ from parse_opendss_file import build_global_y_per_unit, merge_closed_switches_in
 
 def main():
     # 1) Load the 4-bus data
-    dss_filename = "Master.dss"
+    dss_filename = "4Bus-YY-Bal1.dss"
     mpc = parse_opendss_to_mpc(dss_filename, baseMVA=1.0)
     # dss.run_command('Redirect "Master.DSS"')
     # dss.Solution.Solve()
@@ -26,7 +26,7 @@ def main():
     x = np.concatenate([np.abs(x_f), np.angle(x_f)])
     report_results(Vr, Vi, busphase_map, mpc)
     # 4) Generate the measurement data from PF results (Add noise)
-    Y_pu_s, _ = build_global_y_per_unit(mpc, "Master.dss")
+    Y_pu_s, _ = build_global_y_per_unit(mpc, dss_filename)
     z = measurement_function(x, Y_pu_s, mpc, busphase_map)
     std_P = 0.0001
     std_Q = 0.0001
