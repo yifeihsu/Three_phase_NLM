@@ -14,7 +14,7 @@ from parse_opendss_file import build_global_y_per_unit, merge_closed_switches_in
 
 def main():
     # 1) Load the 4-bus data
-    dss_filename = "4Bus-YY-Bal1.dss"
+    dss_filename = "Master.dss"
     mpc = parse_opendss_to_mpc(dss_filename, baseMVA=1.0)
     # dss.run_command('Redirect "Master.DSS"')
     # dss.Solution.Solve()

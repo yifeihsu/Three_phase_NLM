@@ -319,36 +319,14 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
         print("DSSE polar did not converge in max_iter steps.")
 
     print_estimation_results(x_current, mpc)
-
+    # For debug purpose
     lambdaN = 0
-    # # Lagrangian multiplier calculation
-    # # V, theta: the mag and angle for all nodes;
-    # theta = x_current[nnodephase:]
-    # V = x_current[:nnodephase]
+    # Lagrangian multiplier calculation
     # Hp = jacobian_line_params(x_current, Ybus, mpc, busphase_map)
-    # # Hp = np.zeros((3 * nnodephase, npara)) # N_mea * N_para
-    # # for k in range(npara_x):
-    # #     i = fbus[k]
-    # #     j = tbus[k]
-    # #
-    # #     # Pinj w.r.t parameter k (reactance)
-    # #     Hp[i, k] = - V[i] * V[j] * np.sin(theta[i] - theta[j])
-    # #     Hp[j, k] = - V[i] * V[j] * np.sin(theta[j] - theta[i])
-    # #     # Qinj w.r.t parameter k (reactance)
-    # #     Hp[i + nnodephase, k] = -(V[i] ** 2) + V[i] * V[j] * np.cos(theta[i] - theta[j])
-    # #     Hp[j + nnodephase, k] = -(V[j] ** 2) + V[i] * V[j] * np.cos(theta[j] - theta[i])
-    # #
-    # #     # Pinj w.r.t parameter k + npara_x (conductance)
-    # #     Hp[i, k + npara_x] = V[i] ** 2 - V[i] * V[j] * np.cos(theta[i] - theta[j])
-    # #     Hp[j, k + npara_x] = V[j] ** 2 - V[i] * V[j] * np.cos(theta[j] - theta[i])
-    # #     # Qinj w.r.t parameter k + npara_x (conductance)
-    # #     Hp[i + nnodephase, k + npara_x] = - V[i] * V[j] * np.sin(theta[i] - theta[j])
-    # #     Hp[j + nnodephase, k + npara_x] = - V[i] * V[j] * np.sin(theta[j] - theta[i])
-    #
     # Cp = Hp[indices_to_remove, :]
     # Hp = np.delete(Hp, indices_to_remove, axis=0)
     # S = -np.vstack((W @ Hp, Cp)).T
-    # # Compute the Lagrangian multipliers
+    # Compute the Lagrangian multipliers
     # temp = np.linalg.inv(Gain)
     # # Determine a, b, c from the shapes of submatrices
     # a = zero_block.shape[0]  # zero_block is (a × a)
@@ -367,28 +345,28 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     # tt = np.sqrt(np.diag(ea))
     #
     # lambdaN = lambda_vec / tt
+
+    # --- Bad Data Processing (Using Residual Covariance)
+    # Compute final measurement residual vector
+    # h_final = measurement_function(x_current)
+    # r_final = z - h_final
     #
-    # # --- Bad Data Processing (Using Residual Covariance)
-    # # Compute final measurement residual vector
-    # # h_final = measurement_function(x_current)
-    # # r_final = z - h_final
-    # #
-    # # # Build the Gain matrix from the last iteration: Gain = H^T * W * H
-    # # Gain = Hmat.T @ W @ Hmat
-    # # # Measurement covariance is R = inv(W)
-    # # R_meas = np.linalg.inv(W)
-    # # # Residual covariance: omega = R_meas - H * inv(Gain) * H^T
-    # # omega = R_meas - Hmat @ np.linalg.inv(Gain) @ Hmat.T
-    # # # Normalized residuals
-    # # diag_omega = np.diag(omega)
-    # # norm_resid = np.abs(r_final) / np.sqrt(diag_omega)
-    # # max_norm = np.max(norm_resid)
-    # # idx_max = np.argmax(norm_resid)
-    # # bad_data_threshold = 3.0
-    # # if max_norm > bad_data_threshold:
-    # #     print(f"Bad data detected at measurement index {idx_max}: normalized residual = {max_norm:.2f} exceeds threshold {bad_data_threshold}")
-    # #     success = False
-    # # else:
-    # #     print(f"No bad data detected: max normalized residual = {max_norm:.2f} below threshold {bad_data_threshold}")
+    # # Build the Gain matrix from the last iteration: Gain = H^T * W * H
+    # Gain = Hmat.T @ W @ Hmat
+    # # Measurement covariance is R = inv(W)
+    # R_meas = np.linalg.inv(W)
+    # # Residual covariance: omega = R_meas - H * inv(Gain) * H^T
+    # omega = R_meas - Hmat @ np.linalg.inv(Gain) @ Hmat.T
+    # # Normalized residuals
+    # diag_omega = np.diag(omega)
+    # norm_resid = np.abs(r_final) / np.sqrt(diag_omega)
+    # max_norm = np.max(norm_resid)
+    # idx_max = np.argmax(norm_resid)
+    # bad_data_threshold = 3.0
+    # if max_norm > bad_data_threshold:
+    #     print(f"Bad data detected at measurement index {idx_max}: normalized residual = {max_norm:.2f} exceeds threshold {bad_data_threshold}")
+    #     success = False
+    # else:
+    #     print(f"No bad data detected: max normalized residual = {max_norm:.2f} below threshold {bad_data_threshold}")
 
     return x_current, success, lambdaN
