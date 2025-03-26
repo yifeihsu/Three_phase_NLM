@@ -5,7 +5,7 @@ clear
 
 new circuit.4BusYYbal basekV=12.47 phases=3 
 ! **** HAVE TO STIFFEN THE SOURCE UP A LITTLE; THE TEST CASE ASSUMES AN INFINITE BUS
-! ~ mvasc3=200000 200000
+~ mvasc3=200000 200000
 
 set earthmodel=carson
 
@@ -21,7 +21,7 @@ new linegeometry.4wire nconds=4 nphases=3 reduce=yes
 ~ cond=4 wire=neutral   units=ft x=0    h=24 
 
 ! **** 12.47 KV LINE
-new line.line1 geometry=4wire length=2000 units=ft bus1=sourcebus bus2=n2
+new line.1 geometry=4wire length=2000 units=ft bus1=sourcebus bus2=n2
 
 ! **** 3-PHASE STEP-DOWN TRANSFORMER 12.47/4.16 KV Y-Y
 new transformer.t1 xhl=6
@@ -29,12 +29,12 @@ new transformer.t1 xhl=6
 ~ wdg=2 bus=n3 conn=wye kV=4.16  kVA=6000 %r=0.5 
 
 ! **** 4.16 KV LINE
-new line.line2 bus1=n3 bus2=n4 geometry=4wire length=2500 units=ft  
+new line.2 bus1=n3 bus2=n4 geometry=4wire length=2500 units=ft
 
 ! **** WYE-CONNECTED 4.16 KV LOAD
-! New Load.1 Phases=1 Bus1=n4.1 kW=1275 PF=.85 kV=2.4 vminpu=0.74
-! New Load.2 Phases=1 Bus1=n4.2 kW=1800 PF=.90 kV=2.4 vminpu=0.74
-! New Load.3 Phases=1 Bus1=n4.3 kW=2375 PF=.95 kV=2.4 vminpu=0.74
+New Load.1 Phases=1 Bus1=n4.1 kW=1275 PF=.85 kV=2.4 vminpu=0.74
+New Load.2 Phases=1 Bus1=n4.2 kW=1800 PF=.90 kV=2.4 vminpu=0.74
+New Load.3 Phases=1 Bus1=n4.3 kW=2375 PF=.95 kV=2.4 vminpu=0.74
 
 ! **** HAVE TO ALLOW P, Q TO REMAIN CONSTANT TO ABOUT .79 PU -- THIS IS ASSUMED IN TEST CASE
 ! **** DEFAULT IN DSS IS .95, BELOW WHICH IT REVERTS TO LINEAR MODEL
@@ -44,8 +44,8 @@ New Linecode.Kersting nphases=3  Units=mi
 ~ Xmatrix=[1.07805  |0.501679  1.04818  |0.384938  0.423653  1.06507  ]
 ~ Cmatrix=[15.0675  |-4.86254  15.8754  |-1.85328  -3.09107  14.3258  ]
 
-Edit line.line1 Linecode=Kersting
-! Edit line.line2 Linecode=Kersting
+! Edit line.line1 Linecode=Kersting
+Edit line.line2 Linecode=Kersting
 
 set voltagebases=[12.47, 4.16] 
 calcvoltagebases     ! **** let DSS compute voltage bases

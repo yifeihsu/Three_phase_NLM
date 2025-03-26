@@ -41,7 +41,7 @@ New Load.3 Phases=1 Bus1=n4.3 kW=2375 PF=.95 kV=2.4 vminpu=0.74
 
 New Linecode.Kersting nphases=3  Units=mi
 ~ Rmatrix=[0.457552  |0.155951  0.466628  |0.153485  0.158007  0.461473  ]
-~ Xmatrix=[1.07805  |0.501679  1.04818  |0.384938  0.423653  1.06507  ]
+~ Xmatrix=[1.07805  |0.51679  1.04818  |0.384938  0.423653  1.06507  ]
 ~ Cmatrix=[15.0675  |-4.86254  15.8754  |-1.85328  -3.09107  14.3258  ]
 
 Edit line.line1 Linecode=Kersting

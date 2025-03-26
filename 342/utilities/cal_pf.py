@@ -78,8 +78,10 @@ def run_newton_powerflow_3p(mpc, tol=1e-6, max_iter=20):
     Vi0 = np.zeros(nnodephase)
     for row in bus3p:
         b = int(row[0])
-        VmA, VmB, VmC = row[3], row[4], row[5]
-        VaA, VaB, VaC = np.deg2rad(row[6]), np.deg2rad(row[7]), np.deg2rad(row[8])
+        # VmA, VmB, VmC = row[3], row[4], row[5]
+        # VaA, VaB, VaC = np.deg2rad(row[6]), np.deg2rad(row[7]), np.deg2rad(row[8])
+        VmA, VmB, VmC = 1, 1, 1
+        VaA, VaB, VaC = np.deg2rad(0), np.deg2rad(-120), np.deg2rad(120)
         iA = busphase_map[(b, 0)]
         Vr0[iA] = VmA*np.cos(VaA)
         Vi0[iA] = VmA*np.sin(VaA)

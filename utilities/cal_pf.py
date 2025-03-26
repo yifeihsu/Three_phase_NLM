@@ -44,12 +44,18 @@ def run_newton_powerflow_3p(mpc, tol=1e-6, max_iter=20):
 
     # 3.1) Parse loads
     for row in mpc["load3p"]:
-        ldid, ldbus, status, PdA, PdB, PdC, QdA, QdB, QdC = row
+        ldid, ldbus, status, PdA, PdB, PdC, PfA, PfB, PfC = row
         if status == 0:
             continue
         # convert from kW to MW => /1000
         P_ph = np.array([PdA, PdB, PdC]) / 1000.0
-        Q_ph = np.array([QdA, QdB, QdC]) / 1000.0
+        # calculate Q using PF and P
+        # Power factor array
+        pf_ph = np.array([PfA, PfB, PfC])
+
+        # Compute Q: Q = P * tan(arccos(pf))
+        Q_ph = P_ph * np.tan(np.arccos(pf_ph))
+
         # negative for load
         for ph in range(3):
             oldP, oldQ = bus_phase_load[(int(ldbus), ph)]

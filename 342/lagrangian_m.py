@@ -3,7 +3,7 @@ from utilities.mea_fun import measurement_function
 from utilities.make_jacobian import jacobian
 from utilities.make_jacobian_p import jacobian_line_params
 import scipy.sparse as sps
-from scipy.sparse.linalg import spsolve
+from scipy.sparse.linalg import spsolve, splu
 
 def find_zero_injection_nodes(mpc, busphase_map, tol=1.0):
     """
@@ -261,7 +261,7 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
 
         # We'll need an identity matrix matching Hmat's row count:
         nH = H_sp.shape[0]
-        I_H_sp = sps.eye(nH, format='csr')
+        I_H_sp = sps.eye(nH, format='csc')
 
         # Make a zero block for the top-left corner: shape (2*nnodephase-3, 2*nnodephase-3)
         size_top = 2*nnodephase - 3
@@ -284,7 +284,7 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
             [ zero_block_sp, H_W_sp,     C_sp.transpose() ],
             [ H_sp,          I_H_sp,     None             ],
             [ C_sp,          None,       None             ]
-        ], format='csr')
+        ], format='csc')
 
         # 5) Solve the linear system "Gain * dxl = r" via a sparse solver:
         try:
@@ -318,77 +318,151 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
         success = False
         print("DSSE polar did not converge in max_iter steps.")
 
-    print_estimation_results(x_current, mpc)
+    # print_estimation_results(x_current, mpc)
 
-    lambdaN = 0
-    # # Lagrangian multiplier calculation
-    # # V, theta: the mag and angle for all nodes;
-    # theta = x_current[nnodephase:]
-    # V = x_current[:nnodephase]
-    # Hp = jacobian_line_params(x_current, Ybus, mpc, busphase_map)
-    # # Hp = np.zeros((3 * nnodephase, npara)) # N_mea * N_para
-    # # for k in range(npara_x):
-    # #     i = fbus[k]
-    # #     j = tbus[k]
-    # #
-    # #     # Pinj w.r.t parameter k (reactance)
-    # #     Hp[i, k] = - V[i] * V[j] * np.sin(theta[i] - theta[j])
-    # #     Hp[j, k] = - V[i] * V[j] * np.sin(theta[j] - theta[i])
-    # #     # Qinj w.r.t parameter k (reactance)
-    # #     Hp[i + nnodephase, k] = -(V[i] ** 2) + V[i] * V[j] * np.cos(theta[i] - theta[j])
-    # #     Hp[j + nnodephase, k] = -(V[j] ** 2) + V[i] * V[j] * np.cos(theta[j] - theta[i])
-    # #
-    # #     # Pinj w.r.t parameter k + npara_x (conductance)
-    # #     Hp[i, k + npara_x] = V[i] ** 2 - V[i] * V[j] * np.cos(theta[i] - theta[j])
-    # #     Hp[j, k + npara_x] = V[j] ** 2 - V[i] * V[j] * np.cos(theta[j] - theta[i])
-    # #     # Qinj w.r.t parameter k + npara_x (conductance)
-    # #     Hp[i + nnodephase, k + npara_x] = - V[i] * V[j] * np.sin(theta[i] - theta[j])
-    # #     Hp[j + nnodephase, k + npara_x] = - V[i] * V[j] * np.sin(theta[j] - theta[i])
+    # Lagrangian multiplier calculation
+    # V, theta: the mag and angle for all nodes
+    print("Forming Parameters Jacobian")
+    # --- Form Hp as before ---
+    Hp = jacobian_line_params(x_current, Ybus, mpc, busphase_map)
+    print("Jacobian Formed")
+    # print the shape of Hp
+    print("Shape of Hp:", Hp.shape)
+
+    if not sps.isspmatrix_csc(Hp):
+        Hp = Hp.tocsc()
+    if not sps.isspmatrix_csc(W_sp):
+        W_sp = W_sp.tocsc()
+    if not sps.isspmatrix_csc(Gain):
+        Gain = Gain.tocsc()
+
+    # Extract Cp and (reduced) Hp efficiently
+    all_rows_hp = np.arange(Hp.shape[0])
+    keep_rows_hp = np.delete(all_rows_hp, indices_to_remove)
+    Cp = Hp[indices_to_remove, :]
+    Hp = Hp[keep_rows_hp, :]
+
+    # Compute WHp = W_sp * Hp
+    WHp = W_sp.dot(Hp)
+
+    # Stack and transpose in CSC format to form S_sp
+    S_sp = sps.vstack([WHp, Cp], format='csc')
+    S_sp = -S_sp.transpose(copy=True)
+
+    # ----------------------------------------------------------------
+    #       REPLACE FULL INVERSE WITH SPARSE FACTOR + PARTIAL SOLVES
+    # ----------------------------------------------------------------
+
+    print("Factorizing Gain for partial solves...")
+    Gain_factor = splu(Gain)  # Instead of sps.linalg.inv(Gain)
+
+    # Suppose you need to form E5, E8 = selected rows/cols of Gain_inv
+    # Example: "a, b, c" are block sizes. Adjust as appropriate.
+    a, b, c = zero_block_sp.shape[0], I_H_sp.shape[0], C_sp.shape[0]
+
+    row_E5 = np.arange(a, a + b)
+    col_E5 = row_E5
+
+    row_E8 = np.arange(a + b, a + b + c)
+    col_E8 = col_E5  # same columns as E5 in this scenario
+
+    # Build E5 columns by solving Gain * x = e_j for each column j in col_E5
+    E5_cols = []
+    for j in col_E5:
+        e_j = np.zeros(Gain.shape[0])
+        e_j[j] = 1.0
+        x = Gain_factor.solve(e_j)
+        E5_cols.append(x[row_E5])
+
+    # Stack columns into a 2D array, then convert to sparse if desired
+    E5 = np.column_stack(E5_cols)
+    E5_sp = sps.csc_matrix(E5)
+
+    # Same procedure for E8
+    E8_cols = []
+    for j in col_E8:
+        e_j = np.zeros(Gain.shape[0])
+        e_j[j] = 1.0
+        x = Gain_factor.solve(e_j)
+        E8_cols.append(x[row_E8])
+
+    E8 = np.column_stack(E8_cols)
+    E8_sp = sps.csc_matrix(E8)
+
+    # Stack to form phi_sp
+    phi_sp = sps.vstack([E5_sp, E8_sp], format='csc')
+
+    # ----------------------------------------------------------------
+    #               REST OF THE COMPUTATION
+    # ----------------------------------------------------------------
+
+    # Invert diagonal of W_sp
+    W_inv_sp = sps.diags(1.0 / W_sp.diagonal(), format='csc')
+
+    # step1_sp = phi_sp * W_inv_sp * phi_sp^T
+    print("Computing step1_sp")
+    w_diag = W_inv_sp.diagonal()
+    phi_scaled = phi_sp.dot(sps.diags(w_diag))
+    step1_sp = phi_scaled.dot(phi_sp.transpose())
+    covu_sp = step1_sp  # Keep it sparse as long as possible
+
+    # ----------------------------------------------------------------
+    #      If you only need diagonal of S * covu_sp * S^T,
+    #      avoid forming the full dense matrix. Compute row-by-row.
+    # ----------------------------------------------------------------
+
+    print("Computing diagonal of EA = diag(S_sp * covu_sp * S_sp^T)")
+    X_sp = S_sp.dot(covu_sp)  # both are sparse => X_sp also sparse (NxN)
+
+    # 2) Elementwise multiply X_sp and S_sp, then sum each row.
+    #    In SciPy, 'multiply()' is an elementwise product on sparse matrices;
+    #    'sum(axis=1)' sums each row into a 1x1 result; we then flatten to 1D.
+    ea_diag = X_sp.multiply(S_sp).sum(axis=1).A1
+
+    # If you truly need the entire matrix EA in dense form, you can do:
+    #   ea_sp = S_sp.dot(covu_sp).dot(S_sp.transpose())  # keep as sparse
+    #   ea = ea_sp.toarray()                             # convert to dense if absolutely necessary
+
+    print("EA diagonal computed.")
+
+    # ----------------------------------------------------------------
+    #               LAMBDA COMPUTATIONS
+    # ----------------------------------------------------------------
+
+    # Extract lam_part from your dxl array
+    lam_part = dxl[2 * nnodephase - 3:]
+
+    # Compute lambda_vec = S_sp @ lam_part in sparse form
+    lambda_vec = S_sp @ lam_part
+
+    # If using just the diagonal of EA:
+    tt = np.sqrt(ea_diag)  # shape is (len(ea_diag), )
+    lambdaN = lambda_vec / tt
+
+    # Done.  Now lambdaN, ea_diag, etc. are ready for further use.
+    print("All done.")
+
+    # --- Bad Data Processing (Using Residual Covariance)
+    # Compute final measurement residual vector
+    # h_final = measurement_function(x_current)
+    # r_final = z - h_final
     #
-    # Cp = Hp[indices_to_remove, :]
-    # Hp = np.delete(Hp, indices_to_remove, axis=0)
-    # S = -np.vstack((W @ Hp, Cp)).T
-    # # Compute the Lagrangian multipliers
-    # temp = np.linalg.inv(Gain)
-    # # Determine a, b, c from the shapes of submatrices
-    # a = zero_block.shape[0]  # zero_block is (a × a)
-    # b = identity_H.shape[0]  # identity_H is (b × b)
-    # c = C.shape[0]  # C is (c × a)
-    # E5 = temp[a: a + b, a: a + b]
-    # E8 = temp[a + b: a + b + c, a: a + b]
-    #
-    # phi = np.vstack((E5, E8))
-    #
-    # covu = phi @ np.linalg.inv(W) @ phi.T
-    # ea = S @ covu @ S.T
-    #
-    # lambda_vec = S @ dxl[2 * nnodephase - 3:]
-    #
-    # tt = np.sqrt(np.diag(ea))
-    #
-    # lambdaN = lambda_vec / tt
-    #
-    # # --- Bad Data Processing (Using Residual Covariance)
-    # # Compute final measurement residual vector
-    # # h_final = measurement_function(x_current)
-    # # r_final = z - h_final
-    # #
-    # # # Build the Gain matrix from the last iteration: Gain = H^T * W * H
-    # # Gain = Hmat.T @ W @ Hmat
-    # # # Measurement covariance is R = inv(W)
-    # # R_meas = np.linalg.inv(W)
-    # # # Residual covariance: omega = R_meas - H * inv(Gain) * H^T
-    # # omega = R_meas - Hmat @ np.linalg.inv(Gain) @ Hmat.T
-    # # # Normalized residuals
-    # # diag_omega = np.diag(omega)
-    # # norm_resid = np.abs(r_final) / np.sqrt(diag_omega)
-    # # max_norm = np.max(norm_resid)
-    # # idx_max = np.argmax(norm_resid)
-    # # bad_data_threshold = 3.0
-    # # if max_norm > bad_data_threshold:
-    # #     print(f"Bad data detected at measurement index {idx_max}: normalized residual = {max_norm:.2f} exceeds threshold {bad_data_threshold}")
-    # #     success = False
-    # # else:
-    # #     print(f"No bad data detected: max normalized residual = {max_norm:.2f} below threshold {bad_data_threshold}")
+    # # Build the Gain matrix from the last iteration: Gain = H^T * W * H
+    # Gain = Hmat.T @ W @ Hmat
+    # # Measurement covariance is R = inv(W)
+    # R_meas = np.linalg.inv(W)
+    # # Residual covariance: omega = R_meas - H * inv(Gain) * H^T
+    # omega = R_meas - Hmat @ np.linalg.inv(Gain) @ Hmat.T
+    # # Normalized residuals
+    # diag_omega = np.diag(omega)
+    # norm_resid = np.abs(r_final) / np.sqrt(diag_omega)
+    # max_norm = np.max(norm_resid)
+    # idx_max = np.argmax(norm_resid)
+    # bad_data_threshold = 3.0
+    # if max_norm > bad_data_threshold:
+    #     print(f"Bad data detected at measurement index {idx_max}: normalized residual = {max_norm:.2f} exceeds threshold {bad_data_threshold}")
+    #     success = False
+    # else:
+    #     print(f"No bad data detected: max normalized residual = {max_norm:.2f} below threshold {bad_data_threshold}")
 
     return x_current, success, lambdaN

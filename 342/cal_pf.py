@@ -3,7 +3,7 @@ import time
 from parse_opendss_file import build_global_y_per_unit
 import math
 
-def run_newton_powerflow_3p(mpc, tol=1e-5, max_iter=20):
+def run_newton_powerflow_3p(mpc, tol=1e-6, max_iter=20):
     """
     Full-Newton 3-phase PF with ratioed wye-wye transformer. Rectangular Coordinate.
     """
@@ -18,7 +18,7 @@ def run_newton_powerflow_3p(mpc, tol=1e-5, max_iter=20):
         for ph in range(3):
             busphase_map[(b, ph)] = idx
             idx += 1
-    Ybus, node_order = build_global_y_per_unit(mpc, "Master.DSS")
+    Ybus, node_order = build_global_y_per_unit(mpc, "4Bus-YY-Bal.DSS")
 
     nnodephase = Ybus.shape[0]
 
@@ -77,14 +77,14 @@ def run_newton_powerflow_3p(mpc, tol=1e-5, max_iter=20):
     Vi0 = np.zeros(nnodephase)
     for row in bus3p:
         b = int(row[0])
-        # if row[1] == 3:
-        #     VmA, VmB, VmC = row[3], row[4], row[5]
-        #     VaA, VaB, VaC = row[6], row[7], row[8]
-        # else:
-        #     VmA, VmB, VmC = 1.0, 1.0, 1.0
-        #     VaA, VaB, VaC = 0.0, math.radians(-120.0), math.radians(120.0)
-        VmA, VmB, VmC = row[3], row[4], row[5]
-        VaA, VaB, VaC = row[6], row[7], row[8]
+        if row[1] == 3:
+            VmA, VmB, VmC = row[3], row[4], row[5]
+            VaA, VaB, VaC = row[6], row[7], row[8]
+        else:
+            VmA, VmB, VmC = 1.0, 1.0, 1.0
+            VaA, VaB, VaC = 0.0, math.radians(-120.0), math.radians(120.0)
+        # VmA, VmB, VmC = 1, 1, 1
+        # VaA, VaB, VaC = np.deg2rad(0), np.deg2rad(-120), np.deg2rad(120)
         iA = busphase_map[(b, 0)]
         Vr0[iA] = VmA*np.cos(VaA)
         Vi0[iA] = VmA*np.sin(VaA)
