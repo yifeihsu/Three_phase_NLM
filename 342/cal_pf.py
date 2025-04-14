@@ -18,7 +18,7 @@ def run_newton_powerflow_3p(mpc, tol=1e-6, max_iter=20):
         for ph in range(3):
             busphase_map[(b, ph)] = idx
             idx += 1
-    Ybus, node_order = build_global_y_per_unit(mpc, "4Bus-YY-Bal.DSS")
+    Ybus, node_order = build_global_y_per_unit(mpc)
 
     nnodephase = Ybus.shape[0]
 
@@ -46,24 +46,22 @@ def run_newton_powerflow_3p(mpc, tol=1e-6, max_iter=20):
         ldid, ldbus, status, PdA, PdB, PdC, QdA, QdB, QdC = row
         if status == 0:
             continue
-        # convert from kW to MW => /1000
         P_ph = np.array([PdA, PdB, PdC]) / 1000.0
         Q_ph = np.array([QdA, QdB, QdC]) / 1000.0
-        # negative for load
         for ph in range(3):
             oldP, oldQ = bus_phase_load[(int(ldbus), ph)]
             bus_phase_load[(int(ldbus), ph)] = (oldP + P_ph[ph], oldQ + Q_ph[ph])
 
     # 3.2) Parse gens
-    # for row in mpc["gen3p"]:
-    #     genid, gbus, status, VgA, VgB, VgC, PgA, PgB, PgC, QgA, QgB, QgC = row
-    #     if status == 0:
-    #         continue
-    #     P_ph = np.array([PgA, PgB, PgC]) / 1000.0  # MW
-    #     Q_ph = np.array([QgA, QgB, QgC]) / 1000.0  # MVAR
-    #     for ph in range(3):
-    #         oldP, oldQ = bus_phase_gen[(int(gbus), ph)]
-    #         bus_phase_gen[(int(gbus), ph)] = (oldP + P_ph[ph], oldQ + Q_ph[ph])
+    for row in mpc["gen3p"]:
+        genid, gbus, status, VgA, VgB, VgC, PgA, PgB, PgC, QgA, QgB, QgC = row
+        if status == 0:
+            continue
+        P_ph = np.array([PgA, PgB, PgC]) / 1000.0  # MW
+        Q_ph = np.array([QgA, QgB, QgC]) / 1000.0  # MVAR
+        for ph in range(3):
+            oldP, oldQ = bus_phase_gen[(int(gbus), ph)]
+            bus_phase_gen[(int(gbus), ph)] = (oldP + P_ph[ph], oldQ + Q_ph[ph])
 
     # 3.3) Combine into net injection
     for (b,ph), i in busphase_map.items():

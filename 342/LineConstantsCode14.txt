@@ -1,0 +1,99 @@
+!--- OpenDSS Linecodes file generated from Show LINECONSTANTS command
+!--- Frequency = 60 Hz, Earth resistivity = 100 ohm-m
+!--- Earth Model = Deri
+
+New LineCode.LC_1_2  nphases=3  basefreq=60  units=km
+~ Rmatrix=[0.0001938 | 0.0    0.0001938 | 0.0  0.0  0.0001938]
+~ Xmatrix=[0.0005917 | 0.0    0.0005917 | 0.0  0.0  0.0005917]
+~ Cmatrix=[1.4e7     | 0.0    1.4e7     | 0.0  0.0  1.4e7]
+
+New LineCode.LC_1_5  nphases=3  basefreq=60  units=km
+~ Rmatrix=[0.0005403 | 0.0    0.0005403 | 0.0  0.0  0.0005403]
+~ Xmatrix=[0.0022304 | 0.0    0.0022304 | 0.0  0.0  0.0022304]
+~ Cmatrix=[1.31e7    | 0.0    1.31e7    | 0.0  0.0  1.31e7]
+
+New LineCode.LC_2_3  nphases=3 basefreq=60 units=km
+~ Rmatrix=[0.0004699 | 0.0  0.0004699 | 0.0  0.0  0.0004699]
+~ Xmatrix=[0.0019797 | 0.0  0.0019797 | 0.0  0.0  0.0019797]
+~ Cmatrix=[1.16e7    | 0.0  1.16e7    | 0.0  0.0  1.16e7]
+
+New LineCode.LC_2_4  nphases=3 basefreq=60 units=km
+~ Rmatrix=[0.0005811 | 0.0  0.0005811 | 0.0  0.0  0.0005811]
+~ Xmatrix=[0.0017632 | 0.0  0.0017632 | 0.0  0.0  0.0017632]
+~ Cmatrix=[9.04e6    | 0.0  9.04e6    | 0.0  0.0  9.04e6]
+
+New LineCode.LC_2_5  nphases=3 basefreq=60 units=km
+~ Rmatrix=[0.0005695 | 0.0  0.0005695 | 0.0  0.0  0.0005695]
+~ Xmatrix=[0.0017388 | 0.0  0.0017388 | 0.0  0.0  0.0017388]
+~ Cmatrix=[9.2e6     | 0.0  9.2e6     | 0.0  0.0  9.2e6]
+
+New LineCode.LC_3_4  nphases=3 basefreq=60 units=km
+~ Rmatrix=[0.0006701 | 0.0  0.0006701 | 0.0  0.0  0.0006701]
+~ Xmatrix=[0.0017103 | 0.0  0.0017103 | 0.0  0.0  0.0017103]
+~ Cmatrix=[3.4e6     | 0.0  3.4e6     | 0.0  0.0  3.4e6]
+
+New LineCode.LC_4_5  nphases=3 basefreq=60 units=km
+~ Rmatrix=[0.0001335 | 0.0  0.0001335 | 0.0  0.0  0.0001335]
+~ Xmatrix=[0.0004211 | 0.0  0.0004211 | 0.0  0.0  0.0004211]
+~ Cmatrix=[0         | 0.0  0         | 0.0  0.0  0       ]
+
+New LineCode.LC_6_11  nphases=3 basefreq=60 units=km
+~ Rmatrix=[0.0009498 | 0.0  0.0009498 | 0.0  0.0  0.0009498]
+~ Xmatrix=[0.001989  | 0.0  0.001989  | 0.0  0.0  0.001989 ]
+~ Cmatrix=[0         | 0.0  0         | 0.0  0.0  0       ]
+
+New LineCode.LC_6_12  nphases=3 basefreq=60 units=km
+~ Rmatrix=[0.0012291 | 0.0  0.0012291 | 0.0  0.0  0.0012291]
+~ Xmatrix=[0.0025581 | 0.0  0.0025581 | 0.0  0.0  0.0025581]
+~ Cmatrix=[0         | 0.0  0         | 0.0  0.0  0       ]
+
+New LineCode.LC_6_13  nphases=3 basefreq=60 units=km
+~ Rmatrix=[0.0006615 | 0.0  0.0006615 | 0.0  0.0  0.0006615]
+~ Xmatrix=[0.0013027 | 0.0  0.0013027 | 0.0  0.0  0.0013027]
+~ Cmatrix=[0         | 0.0  0         | 0.0  0.0  0       ]
+
+New LineCode.LC_7_8  nphases=3 basefreq=60 units=km
+~ Rmatrix=[0        | 0.0  0        | 0.0  0.0  0       ]
+~ Xmatrix=[0.0017615| 0.0  0.0017615| 0.0  0.0  0.0017615]
+~ Cmatrix=[0        | 0.0  0        | 0.0  0.0  0       ]
+
+New LineCode.LC_7_9  nphases=3 basefreq=60 units=km
+~ Rmatrix=[0       | 0.0  0       | 0.0  0.0  0      ]
+~ Xmatrix=[0.0011001|0.0  0.0011001|0.0  0.0  0.0011001]
+~ Cmatrix=[0       | 0.0  0       | 0.0  0.0  0      ]
+
+New LineCode.LC_9_10  nphases=3 basefreq=60 units=km
+~ Rmatrix=[0.0003181 | 0.0  0.0003181 | 0.0  0.0  0.0003181]
+~ Xmatrix=[0.000845  | 0.0  0.000845  | 0.0  0.0  0.000845 ]
+~ Cmatrix=[0         | 0.0  0         | 0.0  0.0  0       ]
+
+New LineCode.LC_9_14  nphases=3 basefreq=60 units=km
+~ Rmatrix=[0.0012711 | 0.0  0.0012711 | 0.0  0.0  0.0012711]
+~ Xmatrix=[0.0027038 | 0.0  0.0027038 | 0.0  0.0  0.0027038]
+~ Cmatrix=[0         | 0.0  0         | 0.0  0.0  0       ]
+
+New LineCode.LC_10_11  nphases=3 basefreq=60 units=km
+~ Rmatrix=[0.0008205 | 0.0  0.0008205 | 0.0  0.0  0.0008205]
+~ Xmatrix=[0.0019207 | 0.0  0.0019207 | 0.0  0.0  0.0019207]
+~ Cmatrix=[0         | 0.0  0         | 0.0  0.0  0       ]
+
+New LineCode.LC_12_13  nphases=3 basefreq=60 units=km
+~ Rmatrix=[0.0022092 | 0.0  0.0022092 | 0.0  0.0  0.0022092]
+~ Xmatrix=[0.0019988 | 0.0  0.0019988 | 0.0  0.0  0.0019988]
+~ Cmatrix=[0         | 0.0  0         | 0.0  0.0  0       ]
+
+New LineCode.LC_13_14  nphases=3 basefreq=60 units=km
+~ Rmatrix=[0.0017093 | 0.0  0.0017093 | 0.0  0.0  0.0017093]
+~ Xmatrix=[0.0034802 | 0.0  0.0034802 | 0.0  0.0  0.0034802]
+~ Cmatrix=[0         | 0.0  0         | 0.0  0.0  0       ]
+
+New LineCode.LC_4_7  nphases=3 basefreq=60 units=km
+~ Rmatrix=[0.0 | 0.0  0.0 | 0.0  0.0  0.0]
+~ Xmatrix=[0.0020912 | 0.0  0.0020912 | 0.0  0.0  0.0020912]
+~ Cmatrix=[0         | 0.0  0         | 0.0  0.0  0       ]
+
+New LineCode.LC_5_6  nphases=3 basefreq=60 units=km
+~ Rmatrix=[0.0 | 0.0  0.0 | 0.0  0.0  0.0]
+~ Xmatrix=[0.0025202 | 0.0  0.0025202 | 0.0  0.0  0.0025202]
+~ Cmatrix=[0         | 0.0  0         | 0.0  0.0  0       ]
+

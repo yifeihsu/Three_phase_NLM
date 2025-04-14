@@ -200,7 +200,6 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
         for i in range(nbus):
             bus_id = int(mpc["bus3p"][i][0])
             status = int(mpc["bus3p"][i][1])
-
             # Phase A
             Va_A = Va[3 * i]
             Vm_A = Vm[3 * i] * mpc["bus3p"][i][2]/np.sqrt(3)  # Assuming Vm is in p.u.

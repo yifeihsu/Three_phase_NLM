@@ -528,7 +528,7 @@ def merge_closed_switches_in_mpc_and_dss(mpc, switch_threshold=1e-5):
     print("merge_closed_switches_in_mpc_and_dss: done merging & disabling near-zero lines.")
     merge_parallel_transmission_lines_in_mpc(mpc)
 
-def build_global_y_per_unit(mpc, dss_filename):
+def build_global_y_per_unit(mpc):
     """
     Build the global Y matrix in per-unit for the *merged* system.
     We iterate over the *original* DSS circuit lines/xfmrs, but map each bus name

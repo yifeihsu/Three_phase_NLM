@@ -16,7 +16,7 @@ def report_results(Vr, Vi, busphase_map, mpc):
     # gen_on = np.sum(gen3p[:,2] == 1)
     load_on = np.sum(load3p[:,2] == 1)
     line_on = np.sum(line3p[:,3] == 1)
-    xfmr_on = np.sum(xfmr3p[:,3] == 1)
+    # xfmr_on = np.sum(xfmr3p[:,3] == 1)
 
     print("================================================================================")
     print("|     System Summary                                                           |")
@@ -27,7 +27,7 @@ def report_results(Vr, Vi, busphase_map, mpc):
     # print(f"  3-ph Generators      {gen_on:7d}       - {gen3p.shape[0]:7d}")
     print(f"  3-ph Loads           {load_on:7d}       - {load3p.shape[0]:7d}")
     print(f"  3-ph Lines           {line_on:7d}       - {line3p.shape[0]:7d}")
-    print(f"  3-ph Transformers    {xfmr_on:7d}       - {xfmr3p.shape[0]:7d}")
+    # print(f"  3-ph Transformers    {xfmr_on:7d}       - {xfmr3p.shape[0]:7d}")
     print("")
 
     # For brevity, skip the exact total line losses & transformer losses

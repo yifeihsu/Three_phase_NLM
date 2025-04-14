@@ -1,0 +1,30 @@
+/*
+Network data extracted from MatPower Version 7.1.
+Bus Voltage KV_LL = 1kV (Assumed based on ETAP IEEE14Bus Model)
+*/
+
+New Transformer.4-7	kVAs=[100000 100000]	XHL=20.912	PPM=0	Wdg=1	R=0	kV=1	Bus=B4	Tap=0.978	Wdg=2	R=0	kV=1	Bus=B7	%loadloss=0
+!New Transformer.4-9	kVAs=[100000 100000]	XHL=55.618	PPM=0	Wdg=1	R=0	kV=1	Bus=B4	Tap=0.969	Wdg=2	R=0	kV=1	Bus=B9	%loadloss=0
+New Transformer.5-6	kVAs=[100000 100000]	XHL=25.202	PPM=0	Wdg=1	R=0	kV=1	Bus=B5	Tap=0.932	Wdg=2	R=0	kV=1	Bus=B6	%loadloss=0
+/*
+Transformer Windings based on Bus Voltages as below
+BUS NAME	BUS NO	BASE KV
+'Bus 1     HV'	1	132
+'Bus 2     HV'	2	132
+'Bus 3     HV'	3	132
+'Bus 4     HV'	4	132
+'Bus 5     HV'	5	132
+'Bus 6     LV'	6	33
+'Bus 7     ZV'	7	1
+'Bus 8     TV'	8	11
+'Bus 9     LV'	9	33
+'Bus 10    LV'	10	33
+'Bus 11    LV'	11	33
+'Bus 12    LV'	12	33
+'Bus 13    LV'	13	33
+'Bus 14    LV'	14	33
+
+New Transformer.4-7	kVAs=[100000 100000]	XHL=20.912	PPM=0	Wdg=1	R=0	kV=132	Bus=B4	Tap=0.978	Wdg=2	R=0	kV=1	Bus=B7	%loadloss=0
+New Transformer.4-9	kVAs=[100000 100000]	XHL=55.618	PPM=0	Wdg=1	R=0	kV=132	Bus=B4	Tap=0.969	Wdg=2	R=0	kV=33	Bus=B9	%loadloss=0
+New Transformer.5-6	kVAs=[100000 100000]	XHL=25.202	PPM=0	Wdg=1	R=0	kV=132	Bus=B5	Tap=0.932	Wdg=2	R=0	kV=33	Bus=B6	%loadloss=0
+*/

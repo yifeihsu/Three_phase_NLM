@@ -1,0 +1,32 @@
+/*
+Network data extracted from MatPower Version 7.1.
+All per unit values converted to actual values with the formula Z_pu = Z_Ohms/Z_base
+where Z_base = (KV_LL)^2/MVA_base
+MVA_base = 100MVA
+Bus Voltage KV_LL = 1kV (Since VBus Voltages are not mentioned in Common Data Format, Assumed KV_LL = 1kV based on ETAP IEEE14Bus Model)
+
+Susceptance B (in microS) = (B_pu x 10^6)/Z_base
+*/
+
+Clear   ! always have this as the first line before defining a new circuit
+
+New Circuit.IEEE_14
+
+! Define a really stiff 132 kV source for the slack bus
+! (continue editing the VSOURCE object created by the New Circuit command)
+~ BasekV=1  Bus1=B1   pu=1.06  MVASC3=5000000  5000000
+
+! Define the circuit elements
+Redirect IEEE14Lines.DSS
+
+!Redirect IEEE14Trafo.DSS
+
+Redirect IEEE14Loads.DSS
+
+Redirect IEEE14Cap.DSS
+
+Redirect IEEE14Gen.DSS
+
+! Let the openDSS estimate the voltage bases
+Set Voltagebases=[1]    ! legal bases for this problem
+Calcvoltagebases

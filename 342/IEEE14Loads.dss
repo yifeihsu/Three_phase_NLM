@@ -1,0 +1,47 @@
+/*
+Network data extracted from MatPower Version 7.1.
+Bus Voltage KV_LL = 1kV (Assumed based on ETAP IEEE14Bus Model)
+*/
+
+New Load.B2		Bus1=B2		kV=1	kW=21700	kvar=12700	vmaxpu=1.06	vminpu=0.94
+New Load.B3		Bus1=B3		kV=1	kW=94200	kvar=19000	vmaxpu=1.06	vminpu=0.94
+New Load.B4		Bus1=B4		kV=1	kW=47800	kvar=-3900	vmaxpu=1.06	vminpu=0.94
+New Load.B5		Bus1=B5		kV=1	kW=7600		kvar=1600	vmaxpu=1.06	vminpu=0.94
+New Load.B6		Bus1=B6		kV=1	kW=11200	kvar=7500	vmaxpu=1.06	vminpu=0.94
+New Load.B9		Bus1=B9		kV=1	kW=29500	kvar=16600	vmaxpu=1.06	vminpu=0.94
+New Load.B10	Bus1=B10	kV=1	kW=9000		kvar=5800	vmaxpu=1.06	vminpu=0.94
+New Load.B11	Bus1=B11	kV=1	kW=3500		kvar=1800	vmaxpu=1.06	vminpu=0.94
+New Load.B12	Bus1=B12	kV=1	kW=6100		kvar=1600	vmaxpu=1.06	vminpu=0.94
+New Load.B13	Bus1=B13	kV=1	kW=13500	kvar=5800	vmaxpu=1.06	vminpu=0.94
+New Load.B14	Bus1=B14	kV=1	kW=14900	kvar=5000	vmaxpu=1.06	vminpu=0.94
+
+/*
+Load details based on Bus Voltages as below
+BUS NAME	BUS NO	BASE KV
+'Bus 1     HV'	1	132
+'Bus 2     HV'	2	132
+'Bus 3     HV'	3	132
+'Bus 4     HV'	4	132
+'Bus 5     HV'	5	132
+'Bus 6     LV'	6	33
+'Bus 7     ZV'	7	1
+'Bus 8     TV'	8	11
+'Bus 9     LV'	9	33
+'Bus 10    LV'	10	33
+'Bus 11    LV'	11	33
+'Bus 12    LV'	12	33
+'Bus 13    LV'	13	33
+'Bus 14    LV'	14	33
+
+New Load.B2		Bus1=B2		kV=132	kW=21700	kvar=12700	vmaxpu=1.06	vminpu=0.94
+New Load.B3		Bus1=B3		kV=132	kW=94200	kvar=19000	vmaxpu=1.06	vminpu=0.94
+New Load.B4		Bus1=B4		kV=132	kW=47800	kvar=-3900	vmaxpu=1.06	vminpu=0.94
+New Load.B5		Bus1=B5		kV=132	kW=7600		kvar=1600	vmaxpu=1.06	vminpu=0.94
+New Load.B6		Bus1=B6		kV=33	kW=11200	kvar=7500	vmaxpu=1.06	vminpu=0.94
+New Load.B9		Bus1=B9		kV=33	kW=29500	kvar=16600	vmaxpu=1.06	vminpu=0.94
+New Load.B10	Bus1=B10	kV=33	kW=9000		kvar=5800	vmaxpu=1.06	vminpu=0.94
+New Load.B11	Bus1=B11	kV=33	kW=3500		kvar=1800	vmaxpu=1.06	vminpu=0.94
+New Load.B12	Bus1=B12	kV=33	kW=6100		kvar=1600	vmaxpu=1.06	vminpu=0.94
+New Load.B13	Bus1=B13	kV=33	kW=13500	kvar=5800	vmaxpu=1.06	vminpu=0.94
+New Load.B14	Bus1=B14	kV=33	kW=14900	kvar=5000	vmaxpu=1.06	vminpu=0.94
+ */

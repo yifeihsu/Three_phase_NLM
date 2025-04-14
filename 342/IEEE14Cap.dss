@@ -1,0 +1,26 @@
+/*
+Network data extracted from MatPower Version 7.1.
+Bus Voltage KV_LL = 1kV (Assumed based on ETAP IEEE14Bus Model)
+*/
+New Capacitor.B9	Bus1=B9	kV=1	kvar=19000
+
+/*
+Capacitor details based on Bus Voltages as below
+BUS NAME	BUS NO	BASE KV
+'Bus 1     HV'	1	132
+'Bus 2     HV'	2	132
+'Bus 3     HV'	3	132
+'Bus 4     HV'	4	132
+'Bus 5     HV'	5	132
+'Bus 6     LV'	6	33
+'Bus 7     ZV'	7	1
+'Bus 8     TV'	8	11
+'Bus 9     LV'	9	33
+'Bus 10    LV'	10	33
+'Bus 11    LV'	11	33
+'Bus 12    LV'	12	33
+'Bus 13    LV'	13	33
+'Bus 14    LV'	14	33
+
+New Capacitor.B9	Bus1=B9	kV=33	kvar=19000
+*/
