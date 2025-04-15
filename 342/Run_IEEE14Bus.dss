@@ -19,7 +19,7 @@ Set maxiterations=100
 Solve
 
 
-!show voltage    ! sequence voltage magnitudes
-!show voltage  LN Nodes   ! Detailed
-!show power   ! sequence powers
-!show power MVA elem   ! show powers in MVA, element by element
+show voltage    ! sequence voltage magnitudes
+show voltage  LN Nodes   ! Detailed
+show power   ! sequence powers
+show power MVA elem   ! show powers in MVA, element by element

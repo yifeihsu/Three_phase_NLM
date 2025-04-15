@@ -38,10 +38,10 @@ def main():
     # # Test for 342 bus Case
     dss.Command('Redirect "Run_IEEE14Bus.DSS"')
     dss.Text.Command("New LineCode.NLM nphases=3 units=km")
-    dss.Text.Command("~ Rmatrix = [0.0 | 0.0  0.0 | 0.0  0.0  0.0]")
-    dss.Text.Command("~ Xmatrix = [0.0020912 | 0.0  0.0020912 | 0.0  0.0  0.0020912]")
+    dss.Text.Command("~ Rmatrix = [0 | 0.0  0.0 | 0.0  0.0  0.0]")
+    dss.Text.Command("~ Xmatrix = [0.0020912 | 0.000025  0.0020912 | 0.0  0.000025  0.0020912]")
     dss.Text.Command("~ Cmatrix = [0 | 0.0  0 | 0.0  0.0  0]")
-    dss.Text.Command("Edit line.LC_4_7 Linecode=NLM")
+    dss.Text.Command("Edit line.18 Linecode=NLM")
     dss.Solution.Solve()
     # ### Rebuild the Y Matrix *!
     Y_pu, _ = build_global_y_per_unit(mpc)

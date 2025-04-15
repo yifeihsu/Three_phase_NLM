@@ -5,90 +5,90 @@ from utilities.make_jacobian_p import jacobian_line_params
 import scipy.sparse as sps
 from scipy.sparse.linalg import spsolve, splu
 
+
 def find_zero_injection_nodes(mpc, busphase_map, tol=1.0):
     """
-    Identify phase-level nodes (bus-phase) that have effectively zero net injection.
+    Identify phase-level nodes (bus-phase) that have effectively zero net injection,
+    i.e. Generation - Load is within +/- tol (kW or kVar).
 
     Args:
         mpc : dict containing "bus3p", "load3p", "gen3p" data, etc.
         busphase_map : dict mapping (bus_id, phase_id) -> global node index
-        tol : float, absolute threshold for net P,Q to consider zero injection (e.g. 1.0 kW)
+        tol : float, absolute threshold for net P,Q (kW,kVar) to consider zero injection
 
     Returns:
         zero_inj_nodes : list of node indices (0-based) in the global 3-phase node ordering
-                         that have net injection ~ 0.
+                         whose net injection magnitude is < tol.
     """
-    # 1) Extract the relevant arrays
-    bus3p  = mpc["bus3p"]   # columns: [bus_id, type, base_kV_LL, VmA, VmB, VmC, VaA, VaB, VaC]
-    load3p = mpc["load3p"]  # [ldid, ldbus, status, PdA, PdB, PdC, pfA, pfB, pfC]
-    gen3p  = mpc["gen3p"]   # [genid, gbus, status, VgA, VgB, VgC, PgA, PgB, PgC, QgA, QgB, QgC]
 
-    # 2) Gather a list of bus IDs
+    bus3p = mpc["bus3p"]  # columns: [bus_id, type, base_kV_LL, VmA, VmB, VmC, VaA, VaB, VaC]
+    load3p = mpc["load3p"]  # columns: [ldid, ldbus, status, PdA, PdB, PdC, QdA, QdB, QdC] (if truly P,Q)
+    gen3p = mpc["gen3p"]  # columns: [genid, gbus, status, VgA, VgB, VgC, PgA, PgB, PgC, QgA, QgB, QgC]
+
+    # 1) Gather bus IDs and identify the slack bus
     bus_ids = [int(row[0]) for row in bus3p]
-    slack_id = [int(row[0]) for row in bus3p if row[1] == 3][0]
+    slack_buses = [int(row[0]) for row in bus3p if row[1] == 3]
+    # If there's always exactly one slack bus in your system:
+    # slack_id = slack_buses[0]
 
-    # 3) Prepare storage for net injections at each (bus, phase)
-    #    netPQ_phase[(bus, ph)] = [P_net(kW), Q_net(kVar)]
+    # 2) Initialize netPQ_phase = Generation - Load
+    #    We'll store netPQ_phase[(b, ph)] = [P_net(kW), Q_net(kVar)]
     netPQ_phase = {}
     for b in bus_ids:
-        for ph in [0,1,2]:   # ph=0=>A, 1=>B, 2=>C (arbitrary naming)
-            netPQ_phase[(b, ph)] = [0.0, 0.0]
+        for ph in [0, 1, 2]:
+            netPQ_phase[(b, ph)] = [0.0, 0.0]  # [P_net, Q_net]
 
-    # 4) Process loads (subtract from net injection)
-    #    load3p => [ldid, ldbus, status, PdA, PdB, PdC, pfA, pfB, pfC]
+    # 3) Process loads -> subtract from net injection
+    #    Confirm that the last 3 columns are indeed QdA, QdB, QdC (not pfA,B,C).
     for row in load3p:
         ldid, ldbus, status, PdA, PdB, PdC, QdA, QdB, QdC = row
         if status == 0:
-            continue  # skip inactive loads
+            continue
+
         bus_id = int(ldbus)
-        # Phase A portion
-        if PdA > 1e-9:  # Some small threshold
-            # QdA = PdA * np.sqrt(1/(pfA**2) - 1) if pfA < 1.0 else 0.0
-            # Subtract from net injection
-            netPQ_phase[(bus_id, 0)][0] += PdA
-            netPQ_phase[(bus_id, 0)][1] += QdA
+        # Phase A load
+        if abs(PdA) > 1e-9 or abs(QdA) > 1e-9:
+            netPQ_phase[(bus_id, 0)][0] -= PdA
+            netPQ_phase[(bus_id, 0)][1] -= QdA
+        # Phase B load
+        if abs(PdB) > 1e-9 or abs(QdB) > 1e-9:
+            netPQ_phase[(bus_id, 1)][0] -= PdB
+            netPQ_phase[(bus_id, 1)][1] -= QdB
+        # Phase C load
+        if abs(PdC) > 1e-9 or abs(QdC) > 1e-9:
+            netPQ_phase[(bus_id, 2)][0] -= PdC
+            netPQ_phase[(bus_id, 2)][1] -= QdC
 
+    # 4) Process generations -> add to net injection
+    for row in gen3p:
+        genid, gbus, status, VgA, VgB, VgC, PgA, PgB, PgC, QgA, QgB, QgC = row
+        if status == 0:
+            continue
+
+        bus_id = int(gbus)
+        # Phase A
+        if abs(PgA) > 1e-9 or abs(QgA) > 1e-9:
+            netPQ_phase[(bus_id, 0)][0] += PgA
+            netPQ_phase[(bus_id, 0)][1] += QgA
         # Phase B
-        if PdB > 1e-9:
-            netPQ_phase[(bus_id, 1)][0] += PdB
-            netPQ_phase[(bus_id, 1)][1] += QdB
-
+        if abs(PgB) > 1e-9 or abs(QgB) > 1e-9:
+            netPQ_phase[(bus_id, 1)][0] += PgB
+            netPQ_phase[(bus_id, 1)][1] += QgB
         # Phase C
-        if PdC > 1e-9:
-            netPQ_phase[(bus_id, 2)][0] += PdC
-            netPQ_phase[(bus_id, 2)][1] += QdC
+        if abs(PgC) > 1e-9 or abs(QgC) > 1e-9:
+            netPQ_phase[(bus_id, 2)][0] += PgC
+            netPQ_phase[(bus_id, 2)][1] += QgC
 
-    # 5) Process generations (add to net injection)
-    #    gen3p => [genid, gbus, status, VgA, VgB, VgC, PgA, PgB, PgC, QgA, QgB, QgC]
-    # for row in gen3p:
-    #     genid, gbus, status, VgA, VgB, VgC, PgA, PgB, PgC, QgA, QgB, QgC = row
-    #     if status == 0:
-    #         continue  # skip inactive gens
-    #
-    #     bus_id = int(gbus)
-    #     # Phase A
-    #     if PgA > 1e-9 or abs(QgA) > 1e-9:
-    #         netPQ_phase[(bus_id, 0)][0] += PgA
-    #         netPQ_phase[(bus_id, 0)][1] += QgA
-    #     # Phase B
-    #     if PgB > 1e-9 or abs(QgB) > 1e-9:
-    #         netPQ_phase[(bus_id, 1)][0] += PgB
-    #         netPQ_phase[(bus_id, 1)][1] += QgB
-    #     # Phase C
-    #     if PgC > 1e-9 or abs(QgC) > 1e-9:
-    #         netPQ_phase[(bus_id, 2)][0] += PgC
-    #         netPQ_phase[(bus_id, 2)][1] += QgC
-
-    # 6) Determine zero-injection nodes
+    # 5) Determine which nodes have near-zero injection
     zero_inj_nodes = []
-    for (b, ph) in netPQ_phase.keys():
-        if b == slack_id:
-            continue  # skip slack bus, we are loading original data rather than PF results
-        p_net, q_net = netPQ_phase[(b, ph)]
-        # Avoid floating point errors
+    for (b, ph), (p_net, q_net) in netPQ_phase.items():
+        # Optionally skip the slack bus if you never want to classify it as zero injection
+        if b in slack_buses:
+            continue
         if (abs(p_net) < tol) and (abs(q_net) < tol):
             node_idx = busphase_map[(b, ph)]
             zero_inj_nodes.append(node_idx)
+
     return zero_inj_nodes
 
 def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol=1e-6):

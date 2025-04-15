@@ -184,6 +184,15 @@ def parse_opendss_to_mpc(dss_filename, baseMVA=1.0, lc_filename="LineConstantsCo
     # Map: bus_name -> bus_id
     busname_to_id = {}
     bus3p_list = []
+    all_elems = circuit.AllElementNames()
+    # Identify all buses that have generators
+    gen_buses = set()
+
+    for elem in all_elems:
+        if elem.lower().startswith("generator."):
+            dss.Circuit.SetActiveElement(elem)
+            gn_bus = dss.CktElement.BusNames()[0].split(".")[0].lower()
+            gen_buses.add(gn_bus)
 
     # Build bus table
     for i, busname in enumerate(bus_names, start=1):
@@ -198,7 +207,13 @@ def parse_opendss_to_mpc(dss_filename, baseMVA=1.0, lc_filename="LineConstantsCo
 
         mpc["bus_vbase_ln"][bus_lc] = kv_ln * 1e3
 
-        bus_type = 3 if (bus_lc == slack_bus) else 1
+        if bus_lc == slack_bus:
+            bus_type = 3  # Slack bus
+        elif bus_lc in gen_buses:
+            bus_type = 2  # PV (generator) bus
+        else:
+            bus_type = 1  # PQ bus
+
         nodes = dss.Bus.Nodes()
         magangle = dss.Bus.VMagAngle()
         pair_list = list(zip(magangle[0::2], magangle[1::2]))
@@ -240,7 +255,7 @@ def parse_opendss_to_mpc(dss_filename, baseMVA=1.0, lc_filename="LineConstantsCo
             ln_length = dss.Lines.Length()
 
             # Look up linecode
-            ln_code_name = dss.Lines.Geometry()
+            ln_code_name = dss.Lines.Geometry() if dss.Lines.Geometry() else dss.Lines.LineCode()
             if ln_code_name:
                 lcid = lcid_map.get(ln_code_name.lower(), 0)
             else:

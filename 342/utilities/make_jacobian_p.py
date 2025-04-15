@@ -33,21 +33,23 @@ def build_param_info(mpc):
 def jacobian_line_params(x, Ybus, mpc, busphase_map):
     nnodephase = len(busphase_map)
     n_lines = len(mpc["line3p"])
+    # Total number of measurements (assume full set)
     m_inj = 2 * nnodephase
     m_flow = 4 * (3 * n_lines)
     m_v = nnodephase
     m_total = m_inj + m_flow + m_v
 
     param_info = build_param_info(mpc)
-    n_params = len(param_info)
-
+    n_params = len(param_info) # Number of parameters
     # Use sparse matrix components
     data = []
     row_indices = []
     col_indices = []
 
     for c, (line_id, p_name, _) in enumerate(param_info):
+        # Calculate the columm of the Jacobian matrix
         dh_dp = compute_param_flow_injection_partial(x, Ybus, mpc, busphase_map, line_id, p_name)
+        # Only keep non-zero elements
         nonzero_idx = np.nonzero(dh_dp)[0]
         data.extend(dh_dp[nonzero_idx])
         row_indices.extend(nonzero_idx)
