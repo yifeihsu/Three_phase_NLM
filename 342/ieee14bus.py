@@ -23,23 +23,25 @@ def main():
     Y_pu_s, _ = build_global_y_per_unit(mpc)
     z = measurement_function(x, Y_pu_s, mpc, busphase_map)
     # Inject noise into the measurements
-    std_P, std_Q, std_V = 0.0001, 0.0001, 0.00001
+    std_P, std_Q, std_V = 0.001, 0.001, 0.0001
     num_P_inj = num_Q_inj = num_Vmag = len(busphase_map)
     num_PQ_flow = 4 * 3 * len(mpc["line3p"])
     covariance_matrix = np.diag([std_P**2]*num_P_inj + [std_Q**2]*num_Q_inj + [std_P**2]*num_PQ_flow + [std_V**2]*num_Vmag)
     # Print the shape of the covariance matrix
     print("Covariance matrix shape:", covariance_matrix.shape)
     z_noisy = z + np.random.normal(0, np.sqrt(np.diag(covariance_matrix)), size=len(z))
-    #
+
     # # Pre-estimation if needed
     # # x_est, success, lambdaN = run_lagrangian_polar(
     # #     z_noisy, x_f, busphase_map, Y_pu_s, covariance_matrix, mpc
     # # )
-    # # Test for 342 bus Case
+
+    ## l连续线路的乘子 参数错误改变
+    # Test for 14 bus Case
     dss.Command('Redirect "Run_IEEE14Bus.DSS"')
     dss.Text.Command("New LineCode.NLM nphases=3 units=km")
     dss.Text.Command("~ Rmatrix = [0 | 0.0  0.0 | 0.0  0.0  0.0]")
-    dss.Text.Command("~ Xmatrix = [0.0020912 | 0.000025  0.0020912 | 0.0  0.000025  0.0020912]")
+    dss.Text.Command("~ Xmatrix = [0.0020912 | 0.0  0.0020912 | 0.0  0.000025  0.0020912]")
     dss.Text.Command("~ Cmatrix = [0 | 0.0  0 | 0.0  0.0  0]")
     dss.Text.Command("Edit line.18 Linecode=NLM")
     dss.Solution.Solve()
@@ -54,5 +56,8 @@ def main():
     error_type = "X" if (largest_idx%12 + 1)//6 == 1 else "R"
     print(f"Largest Lagrangian param => index={(largest_idx%12 + 1)%6}, value={largest_val:.4g}, "
           f"line={largest_idx//12 + 1}, error_type={error_type}")
+
+    ## Define the grouped indices here and test the identification effectiveness
+
 if __name__ == "__main__":
     main()

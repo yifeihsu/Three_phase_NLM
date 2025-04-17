@@ -91,6 +91,58 @@ def find_zero_injection_nodes(mpc, busphase_map, tol=1.0):
 
     return zero_inj_nodes
 
+
+# def compute_line_mahalanobis_distances(lambdaN, EA, mpc):
+#     """
+#     Given the normalized Lagrange multipliers `lambdaN` of length npara,
+#     and the full covariance submatrix EA of shape (npara, npara),
+#     compute the group Mahalanobis distance for each line's 12 parameters.
+#
+#     Returns:
+#       distances : list of (line_index, distance_value)
+#     """
+#     line_data = mpc["line3p"]
+#     num_lines = len(line_data)
+#     nparam_line = 12  # 6 for X + 6 for R per line
+#
+#     distances = []
+#     for i_line in range(num_lines):
+#         start_idx = i_line * nparam_line
+#         end_idx = start_idx + nparam_line
+#
+#         # 1) Extract that line's multipliers
+#         lam_vec = lambdaN[start_idx:end_idx]
+#         # 2) Sub-cov
+#         EA_sub = EA[start_idx:end_idx, start_idx:end_idx]
+#
+#         # 3) Invert sub-block
+#         #    (Better to do a Cholesky factor if EA_sub is SPD, but np.linalg.inv is simpler for illustration.)
+#         try:
+#             EA_sub_inv = np.linalg.inv(EA_sub)
+#             # 4) Mahalanobis distance
+#             dist_line = np.sqrt(lam_vec @ EA_sub_inv @ lam_vec)
+#         except np.linalg.LinAlgError:
+#             dist_line = np.inf  # if singular, treat as large distance
+#
+#         distances.append((i_line, dist_line))
+#
+#     return distances
+
+def compute_group_rms_dist(lambdaN, nparam_line=12):
+    """
+    If lambdaN is already individually normalized,
+    then we can define a 'group distance' as RMS of each line's 12 parameters.
+    """
+    num_lines = len(lambdaN) // nparam_line
+    distances = []
+    for i_line in range(num_lines):
+        start_idx = i_line * nparam_line
+        end_idx   = start_idx + nparam_line
+        lam_block = lambdaN[start_idx:end_idx]
+        dist_line = np.sqrt(np.mean(lam_block**2)) * nparam_line
+        distances.append((i_line, dist_line))
+    return distances
+
 def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol=1e-6):
     """
     DSSE solver using polar coordinates.
@@ -161,6 +213,9 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     # Find the zero injection buses
     zi_nodes = find_zero_injection_nodes(mpc, busphase_map, tol=1.0)
     indices_to_remove = []
+
+    zi_nodes = []
+
     for i_node in zi_nodes:
         # i_node is the node index in [0..nnodephase-1] for that phase
         # P row => i_node
@@ -405,11 +460,41 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     step1_sp = phi_scaled.dot(phi_sp.transpose())
     covu_sp = step1_sp  # Keep it sparse as long as possible
 
-    # ----------------------------------------------------------------
-    #      If you only need diagonal of S * covu_sp * S^T,
-    #      avoid forming the full dense matrix. Compute row-by-row.
-    # ----------------------------------------------------------------
+    def check_PSD(covLa):
+        """
+        Check if the matrix is positive semi-definite (PSD).
+        """
+        try:
+            # Compute eigenvalues for the symmetric matrix
+            eigenvalues = np.linalg.eigvalsh(covLa)
+            # Define a tolerance for floating-point comparisons
+            tolerance = 1e-9  # Adjust tolerance if needed
+            # Check if the minimum eigenvalue is non-negative within the tolerance
+            is_psd = np.min(eigenvalues) >= -tolerance
+            if is_psd:
+                print(f"Matrix appears to be PSD (min eigenvalue: {np.min(eigenvalues):.2e})")
+            else:
+                print(f"Matrix is NOT PSD (min eigenvalue: {np.min(eigenvalues):.2e})")
+        except np.linalg.LinAlgError:
+            # Handle cases where eigenvalue computation fails
+            print("Eigenvalue computation failed.")
+            is_psd = False
 
+    def regularization(covL):
+        """
+        Regularize the covariance matrix covL by adding a small value to its diagonal.
+        """
+        epsilon = 1e-12  # Small regularization parameter, adjust if needed
+
+        # Ensure covL is available (Calculate S, R first if needed)
+        # R_mat = np.linalg.inv(W) # Assuming W is dense here
+        # S_mat = ... calculate S ... (May need G_inv = np.linalg.inv(H_sp.T @ W_sp @ H_sp) etc.)
+        # covL = S_mat @ R_mat @ S_mat.T # This calculation might be needed if not already done
+        if sps.issparse(covL):
+            covL_reg = covL + epsilon * sps.eye(covL.shape[0], format=covL.format)
+        else:  # Assuming covL is a NumPy array
+            covL_reg = covL + epsilon * np.identity(covL.shape[0])
+        return covL_reg
     print("Computing diagonal of EA = diag(S_sp * covu_sp * S_sp^T)")
     X_sp = S_sp.dot(covu_sp)  # both are sparse => X_sp also sparse (NxN)
 
@@ -419,8 +504,9 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     ea_diag = X_sp.multiply(S_sp).sum(axis=1).A1
 
     # If you truly need the entire matrix EA in dense form, you can do:
-    #   ea_sp = S_sp.dot(covu_sp).dot(S_sp.transpose())  # keep as sparse
-    #   ea = ea_sp.toarray()                             # convert to dense if absolutely necessary
+    ea_sp = S_sp.dot(covu_sp).dot(S_sp.transpose())  # keep as sparse
+    ea = ea_sp.toarray()                             # convert to dense if absolutely necessary
+
 
     print("EA diagonal computed.")
 
@@ -437,6 +523,10 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     # If using just the diagonal of EA:
     tt = np.sqrt(ea_diag)  # shape is (len(ea_diag), )
     lambdaN = lambda_vec / tt
+
+    line_distances = compute_group_rms_dist(lambdaN, nparam_line=12)
+    for i_line, dval in line_distances:
+        print(f"Line {i_line + 1} => Mahalanobis distance = {dval:.3f}")
 
     # Done.  Now lambdaN, ea_diag, etc. are ready for further use.
     print("All done.")
