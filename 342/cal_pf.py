@@ -277,10 +277,11 @@ def run_newton_powerflow_3p(mpc, tol=1e-6, max_iter=20):
     for it in range(1, max_iter+1):
         f, J = mismatch_and_jacobian(x_est)
         max_res = np.max(np.abs(f))
-        if max_res < tol:
-            break
         dx = np.linalg.solve(J, -f)
+
         max_dx = np.max(np.abs(dx))
+        if max_dx < tol:
+            break
         x_est += dx
         print(f" {it:2d}      {max_res:1.3e}       {max_dx:1.3e}")
 

@@ -832,19 +832,3 @@ def merge_parallel_transmission_lines_in_mpc(mpc):
     mpc["line3p"] = final_arr
 
     print("merge_parallel_transmission_lines_in_mpc: finished merging parallel lines.\n")
-
-def main():
-    dss_filename="Master.DSS"
-    lc_filename="LineConstantsCode.txt"
-    # 1) parse (including line constants from lc_filename)
-    mpc = parse_opendss_to_mpc(dss_filename, baseMVA=1.0, lc_filename=lc_filename)
-    # 2) merges
-    merge_closed_switches_in_mpc_and_dss(mpc, switch_threshold=2)
-    # 3) build Y
-    Y_pu, node_ord = build_global_y_per_unit(mpc, dss_filename)
-    print("Final Y shape:", Y_pu.shape)
-    print("Node order:", node_ord)
-
-
-if __name__=="__main__":
-    main()
