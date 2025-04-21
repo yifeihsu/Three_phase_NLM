@@ -14,7 +14,7 @@ def main():
     dss_filename = "Master.DSS"
     mpc = parse_opendss_to_mpc(dss_filename, baseMVA=1.0, slack_bus="p1")
     # 2) merges and Run Newton PF
-    merge_closed_switches_in_mpc_and_dss(mpc, switch_threshold=0.1)
+    merge_closed_switches_in_mpc_and_dss(mpc, switch_threshold=2) ### Be careful with the switch threshold
     Vr, Vi, busphase_map = run_newton_powerflow_3p(mpc, tol=1e-6, max_iter=20)
     # 3) Print final PF results
     x_f = Vr + 1j * Vi
@@ -55,10 +55,10 @@ def main():
     # For primary network
     dss.Command('Redirect "Master.DSS"')
     dss.Text.Command("New LineCode.NLM nphases=3 units=mi")
-    dss.Text.Command("~ Rmatrix = [0.13018 | -4.14314E-006  0.130177 | -8.11898E-006 - 4.14314E-006  0.13018]")
-    dss.Text.Command("~ Xmatrix = [0.0668195 | -0.000424891  0.066985 | -4.2835E-005 - 0.000424891  0.0668195]")
+    dss.Text.Command("~ Rmatrix = [0.13018  |-4.14314E-006  0.130177  |-8.11898E-006  -4.14314E-006  0.13018]")
+    dss.Text.Command("~ Xmatrix = [0.0668195  |-0.000224891  2.8703539  |-4.2835E-005  -0.000224891  6.13821694]")
     dss.Text.Command("~ Cmatrix = [566.228 | 0  566.228 | 0  0  566.228]")
-    dss.Text.Command("Edit line.45 Linecode=NLM")
+    dss.Text.Command("Edit line.14 Linecode=NLM")
     dss.Solution.Solve()
 
     ### Rebuild the Y Matrix *!
