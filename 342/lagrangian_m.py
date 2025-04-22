@@ -27,7 +27,7 @@ def find_zero_injection_nodes(mpc, busphase_map, tol=1.0):
     """
 
     bus3p = mpc["bus3p"]  # columns: [bus_id, type, base_kV_LL, VmA, VmB, VmC, VaA, VaB, VaC]
-    load3p = mpc["load3p"]  # columns: [ldid, ldbus, status, PdA, PdB, PdC, QdA, QdB, QdC] (if truly P,Q)
+    load3p = mpc["load3p"]  # columns: [ldid, ldbus, status, PdA, PdB, PdC, QdA, QdB, QdC]
     gen3p = mpc["gen3p"]  # columns: [genid, gbus, status, VgA, VgB, VgC, PgA, PgB, PgC, QgA, QgB, QgC]
 
     # 1) Gather bus IDs and identify the slack bus
@@ -248,6 +248,9 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     # Find the zero injection buses
     zi_nodes = find_zero_injection_nodes(mpc, busphase_map, tol=1.0)
     indices_to_remove = []
+
+
+    #### We assume the normal equations without constraints
 
     zi_nodes = []
 
@@ -546,40 +549,39 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     #               GPU COMPUTATION
     # ----------------------------------------------------------------
 
-
     cp.cuda.set_allocator(cp.cuda.MemoryPool(cp.cuda.malloc_managed).malloc)
     dtype = cp.float64
 
-    print("Forming Parameters Jacobian (Hp)")
+    print("Forming Parameters Jacobian (Hp)") # CPU Part
     Hp = jacobian_line_params(x_current, Ybus, mpc, busphase_map)
     print("Jacobian Formed")
 
-    # 1) Convert Hp to dense NumPy, extract needed rows
     Hp_dense = Hp.toarray()  # from sparse to dense on CPU
     all_rows_hp = np.arange(Hp.shape[0])
     keep_rows_hp = (np.delete(all_rows_hp, indices_to_remove)
                     if len(indices_to_remove) > 0 else all_rows_hp)
-
     if len(indices_to_remove) > 0:
         Cp_dense = Hp[indices_to_remove, :].toarray()
     else:
-        Cp_dense = np.zeros((0, Hp.shape[1]))  # empty sub-block
-
+        Cp_dense = np.zeros((0, Hp.shape[1]))
     Hp_dense = Hp_dense[keep_rows_hp, :]
 
-    # 2) Convert W_sp (which is your W = R^{-1}) to dense
-    W_dense = W_sp.toarray()  # CPU dense
+    W_dense = W_sp.toarray()
     # 3) Transfer dense arrays to GPU as CuPy arrays
     W_gpu = cp.asarray(W_dense).astype(dtype, copy=False)  # shape (n_meas, n_meas)
-    Hp_gpu = cp.asarray(Hp_dense).astype(dtype, copy=False)  # shape (n_meas, n_params) or similar
-    Cp_gpu = cp.asarray(Cp_dense).astype(dtype, copy=False)  # shape (n_zi, n_params), possibly empty
+
+    #### Remove the row/col if zero injection (C not empty)
+
+    Hp_gpu = cp.asarray(Hp_dense).astype(dtype, copy=False)  # shape (n_meas-n_zi, n_params)
+    Cp_gpu = cp.asarray(Cp_dense).astype(dtype, copy=False)  # shape (n_zi, n_params)
 
     # 4) Compute WHp = W_gpu @ Hp_gpu on GPU (dense)
     WHp_gpu = W_gpu @ Hp_gpu  # shape: (n_meas, n_params)
 
     # 5) Build S = [WHp; Cp], then transpose => S = -(S^T)
-    S_gpu = cp.concatenate([WHp_gpu, Cp_gpu], axis=0)  # vertical stack
-    S_gpu = -S_gpu.T  # now shape is (n_params, n_meas + n_zi)
+    S_gpu = cp.concatenate([WHp_gpu, Cp_gpu], axis=0)
+    S_gpu = -S_gpu.T  # (n_params, n_meas + n_zi)
+    # Scale for numerical stability
     D_inv = 1e-6
     S_gpu *= D_inv
 
@@ -592,7 +594,7 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     print(f"Transferring Gain ({Gain_csc.shape}, nnz={Gain_csc.nnz}) matrix to GPU...")
     Gain_gpu = cpsparse.csc_matrix(Gain_csc)
 
-    # 3. Perform the sparse LU factorization on the GPU
+    # Perform the sparse LU factorization on the GPU
     Gain_factor_gpu = cpsparse_linalg.splu(Gain_gpu)
 
     a, b, c = zero_block_sp.shape[0], I_H_sp.shape[0], C_sp.shape[0]
@@ -605,7 +607,7 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     # 2. Create the multi-RHS matrix on GPU (columns of Identity)
     print(f"Creating RHS matrix on GPU for {len(cols_to_solve_np)} solves...")
     # Create a dense zero matrix first
-    rhs_gpu = cp.zeros((n_total, len(cols_to_solve_np)), dtype=cp.float64)  # Match Gain_gpu dtype if possible
+    rhs_gpu = cp.zeros((n_total, len(cols_to_solve_np)), dtype=cp.float64)
     # Place 1.0s using advanced indexing
     gpu_col_indices = cp.arange(len(cols_to_solve_np))
     # Ensure cols_to_solve_np is usable as index (needs to be int array/list)
