@@ -352,94 +352,164 @@ for (u, v) in G.edges():
 ###############################################################################
 # 7) Plot each category
 ###############################################################################
-for cat, sg in subgraphs.items():
-    if sg.number_of_nodes() == 0:
-        continue
+###############################################################################
+# 0) Global Figure and Style Settings
+###############################################################################
+mpl.rcParams['figure.dpi'] = 300
+mpl.rcParams['savefig.dpi'] = 300
+mpl.rcParams['font.family'] = 'serif'
+mpl.rcParams['font.size'] = 10
 
-    # Pick layout & styling for each category:
-    if cat in ["HV", "MV"]:
-        # 'dot' layout often works well for feeders
-        layout_func = lambda g: graphviz_layout(g, prog="dot")
-        fig_size = (7, 5)
+###############################################################################
+# 1) (Optional) Compile Circuit, Solve, and Build Main Graph 'G'
+###############################################################################
+# ...
+# [Your code that builds the main graph G and assigns node attributes:
+#  "category" in {"HV", "MV", "LV", ...}, "is_load", "bridge_node", etc.]
+
+# Example categories for demonstration:
+# for node in G.nodes():
+#     # Suppose we already have G.nodes[node]["category"] = "HV", "MV", or "LV"
+#     # and G.nodes[node]["is_load"], G.nodes[node]["bridge_node"]
+
+subgraphs = {"HV": nx.Graph(), "MV": nx.Graph(), "LV": nx.Graph()}
+
+for n in G.nodes():
+    cat = G.nodes[n]["category"]
+    if cat in subgraphs:
+        subgraphs[cat].add_node(n)
+        # Copy node attributes
+        for attr, val in G.nodes[n].items():
+            subgraphs[cat].nodes[n][attr] = val
+
+# Add edges only if endpoints share the same category
+for (u, v) in G.edges():
+    c_u = G.nodes[u]["category"]
+    c_v = G.nodes[v]["category"]
+    if c_u == c_v and c_u in subgraphs:
+        subgraphs[c_u].add_edge(u, v, **G[u][v])
+
+# Extract them for convenience
+sg_HV = subgraphs["HV"]
+sg_MV = subgraphs["MV"]
+sg_LV = subgraphs["LV"]
+
+###############################################################################
+# 3) Set Up a Single Figure with 3 Subplots
+###############################################################################
+fig, (ax_hv, ax_mv, ax_lv) = plt.subplots(1, 3, figsize=(18, 6))
+
+###############################################################################
+# 4) Define a Helper to Plot Each Subgraph on a Given Axes
+###############################################################################
+def plot_subgraph(sg, ax, title, layout="dot"):
+    """Draw 'sg' on Axes 'ax' using the specified layout and styling."""
+    # Choose layout
+    if layout == "dot":
+        pos = graphviz_layout(sg, prog="dot")
         node_size = 300
         edge_width = 1.0
-    elif cat in ["SN", "LV"]:
-        # Kamada–Kawai for denser low-voltage networks
-        layout_func = lambda g: nx.kamada_kawai_layout(g, scale=3.0)
-        fig_size = (8, 6)
+    elif layout == "kamada":
+        pos = nx.kamada_kawai_layout(sg, scale=3.0)
         node_size = 250
         edge_width = 1.5
     else:
-        # Unknown category fallback
-        layout_func = lambda g: nx.spring_layout(g, seed=42)
-        fig_size = (6, 4)
+        # fallback
+        pos = nx.spring_layout(sg, seed=42)
         node_size = 200
         edge_width = 1.0
 
-    # Create figure
-    plt.figure(figsize=fig_size)
-
-    # Compute positions
-    pos = layout_func(sg)
-
-    # Node face and border colors
+    # Prepare node colors and borders
     node_colors = []
     node_borders = []
     for n in sg.nodes():
-        # Salmon for load nodes, light gray for non-load
         if sg.nodes[n]["is_load"]:
-            node_colors.append("#FCA082")  # Light salmon
+            node_colors.append("#FCA082")  # Light salmon for load
         else:
-            node_colors.append("#F0F0F0")  # Light gray
-        # Bridging nodes have a blue outline
+            node_colors.append("#F0F0F0")  # Light gray for non-load
+        # Blue outline for bridging nodes
         node_borders.append("blue" if sg.nodes[n]["bridge_node"] else "black")
 
+    # Draw nodes
     nx.draw_networkx_nodes(
-        sg, pos,
+        sg, pos, ax=ax,
         node_color=node_colors,
         edgecolors=node_borders,
         node_size=node_size,
         linewidths=1.0
     )
 
-    # Edge colors
+    # Prepare edge colors
     edge_colors = []
     for (u, v) in sg.edges():
         if sg[u][v]["is_switch"]:
-            edge_colors.append("#3182BD")  # Switch lines in muted blue
+            edge_colors.append("#3182BD")  # Switch line (blue)
         else:
-            edge_colors.append("#636363")  # Normal lines in dark gray
+            edge_colors.append("#636363")  # Normal line (dark gray)
 
+    # Draw edges
     nx.draw_networkx_edges(
-        sg, pos,
+        sg, pos, ax=ax,
         edge_color=edge_colors,
         width=edge_width
     )
 
-    # Draw labels WITHOUT any bounding box
+    # Draw labels (no bounding box)
     nx.draw_networkx_labels(
-        sg, pos,
+        sg, pos, ax=ax,
         font_size=7,
         font_family="serif",
         font_color="black"
     )
 
-    # Legend
-    load_patch = mpatches.Patch(facecolor="#FCA082", edgecolor="black", label="Load Bus")
-    non_load_patch = mpatches.Patch(facecolor="#F0F0F0", edgecolor="black", label="Non-Load Bus")
-    bridge_patch = mpatches.Patch(facecolor="none", edgecolor="blue", label="Transformer Node")
-    switch_line = mlines.Line2D([], [], color="#3182BD", linewidth=2, label="Switch Line")
-    normal_line = mlines.Line2D([], [], color="#636363", linewidth=2, label="Normal Line")
+    ax.set_title(title, fontsize=12)
+    ax.axis("off")
 
-    plt.legend(
-        handles=[load_patch, non_load_patch, bridge_patch, switch_line, normal_line],
-        loc="best",
-        fontsize=7,
-        frameon=True
-    )
+###############################################################################
+# 5) Plot HV, MV, LV in Each Subplot
+###############################################################################
+plot_subgraph(sg_HV, ax_hv,  title="HV Subgraph", layout="dot")
+plot_subgraph(sg_MV, ax_mv,  title="MV Subgraph", layout="dot")
+plot_subgraph(sg_LV, ax_lv,  title="LV Subgraph", layout="kamada")
 
-    plt.title(f"{cat} Subgraph", fontsize=12)
-    plt.axis("off")
-    plt.tight_layout()
-    plt.savefig(f"{cat}_subgraph.png", bbox_inches='tight')
-    plt.show()
+###############################################################################
+# 6) Use ONE Shared Legend for the Entire Figure
+###############################################################################
+# Prepare your legend handles just once
+load_patch = mpatches.Patch(facecolor="#FCA082", edgecolor="black", label="Load Bus")
+non_load_patch = mpatches.Patch(facecolor="#F0F0F0", edgecolor="black", label="Non-Load Bus")
+bridge_patch = mpatches.Patch(facecolor="none", edgecolor="blue", label="Transformer Node")
+switch_line = mlines.Line2D([], [], color="#3182BD", linewidth=2, label="Switch Line")
+normal_line = mlines.Line2D([], [], color="#636363", linewidth=2, label="Normal Line")
+legend_handles = [load_patch, non_load_patch, bridge_patch, switch_line, normal_line]
+
+# Place the legend at the bottom (or top) – adjust as needed
+# fig.legend(
+#     handles=legend_handles,
+#     loc="lower center",       # Could use "upper center" if you prefer
+#     bbox_to_anchor=(0.5, 0.0),# adjust to move up/down
+#     ncol=5,
+#     fontsize=8,
+#     frameon=True
+# )
+fig.legend(
+    handles=legend_handles,
+    loc="upper left",
+    bbox_to_anchor=(0.02, 0.98),  # Adjust these coordinates as needed
+    ncol=1,
+    fontsize=10,
+    frameon=True
+)
+
+# Optionally, add dashed dividing lines between subplots in figure coords
+# (May need to adjust x-positions depending on your layout)
+line1 = mlines.Line2D([0.33, 0.33], [0.02, 0.98], transform=fig.transFigure,
+                      color='black', linestyle='--', lw=1)
+line2 = mlines.Line2D([0.66, 0.66], [0.02, 0.98], transform=fig.transFigure,
+                      color='black', linestyle='--', lw=1)
+fig.add_artist(line1)
+fig.add_artist(line2)
+
+plt.tight_layout(rect=[0, 0.05, 1, 1])  # leave space at bottom for legend
+plt.savefig("HV_MV_LV_combined.png", bbox_inches="tight")
+plt.show()
