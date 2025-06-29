@@ -47,6 +47,14 @@ New Linecode.Kersting nphases=3  Units=mi
 ! Edit line.line1 Linecode=Kersting
 Edit line.line2 Linecode=Kersting
 
+
+! ------------- Mid‑span HIF auto‑generated block -----------
+Edit line.2 enabled=no
+New line.2_a bus1=n3 bus2=FaultBus length=1250.0000 units=ft geometry=4wire 
+New line.2_b bus1=FaultBus bus2=n4 length=1250.0000 units=ft geometry=4wire 
+New Load.HIF_Load Bus1=FaultBus.1 Phases=1 Conn=Wye Model=1 kW=0 kvar=0
+! -----------------------------------------------------------
+
 set voltagebases=[12.47, 4.16] 
 calcvoltagebases     ! **** let DSS compute voltage bases
 solve

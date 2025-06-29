@@ -35,7 +35,7 @@ def main():
        identifying the location of the modeling error.
     """
     dss_filename = "Master.DSS"
-    dss_filename_ft = "Master1.DSS"
+    dss_filename_ft = "Master_ft.DSS"
     baseMVA = 1.0
     slack_bus = "p1"
 
