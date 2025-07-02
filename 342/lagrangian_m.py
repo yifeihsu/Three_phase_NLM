@@ -158,7 +158,7 @@ def compute_line_mahalanobis_distances(lambdaN, EA, mpc, epsilon_reg=1e-10):
 
     return distances
 
-def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol=1e-5):
+def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol=1e-4):
     """
     DSSE solver using polar coordinates.
     Args:

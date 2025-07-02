@@ -65,46 +65,26 @@ def main():
     x_true = np.concatenate([np.abs(x_f_true), np.angle(x_f_true)])
     print("...Power flow for the burnt-out scenario is complete.")
 
-    # --- 2) GENERATE NOISY MEASUREMENTS FROM THE "TRUE" STATE ---
+    # --- 2) GENERATE NOISY MEASUREMENTS FROM THE "TRUE" STATE -----------------
     print("\n--- Step 2: Generating noisy measurements from the true state ---")
 
-    # Build the admittance matrix for the TRUE system to generate measurements
     Y_pu_true, _ = build_global_y_per_unit(mpc_true)
-
-    # Generate ideal measurements
     z = measurement_function(x_true, Y_pu_true, mpc_true, busphase_map_true)
 
-    # Define noise levels and create the covariance matrix
-    std_P, std_Q, std_V = 0.0001, 0.0001, 0.00001
     num_bus_phases = len(busphase_map_true)
-    num_lines = len(mpc_true["line3p"])
-
-    # Measurement vector structure: [P_inj, Q_inj, P_flow & Q_flow, V_mag]
     num_P_inj = num_Q_inj = num_Vmag = num_bus_phases
-    # Assuming 4 flow measurements (P_from, Q_from, P_to, Q_to) per phase per line
-    num_PQ_flow = 4 * 3 * num_lines
 
-    # Check if the generated measurement vector z matches the expected size
-    expected_z_len = num_P_inj + num_Q_inj + num_PQ_flow + num_Vmag
-    if len(z) != expected_z_len:
-        print(f"Warning: Measurement vector 'z' length ({len(z)}) does not match expected length ({expected_z_len}).")
-        # Adjusting num_PQ_flow based on actual z size minus other measurements
-        num_PQ_flow = len(z) - (num_P_inj + num_Q_inj + num_Vmag)
-        print(f"Adjusted num_PQ_flow to {num_PQ_flow} to match 'z' vector.")
+    # standard deviations
+    std_P, std_Q, std_V = 1e-4, 1e-4, 1e-4
 
-    # Create covariance matrix R
-    # Assuming P and Q measurements for flows have the same std as injections
-    diag_R = \
-        [std_P ** 2] * num_P_inj + \
-        [std_Q ** 2] * num_Q_inj + \
-        [std_P ** 2] * num_PQ_flow + \
-        [std_V ** 2] * num_Vmag
-    covariance_matrix = np.diag(diag_R)
+    diag_R = (
+            [std_P ** 2] * num_P_inj +
+            [std_Q ** 2] * num_Q_inj +
+            [std_V ** 2] * num_Vmag
+    )
+    R = np.diag(diag_R)  # <-- renamed
 
-    print("Covariance matrix shape:", covariance_matrix.shape)
-
-    # Inject noise to create the final measurement set
-    z_noisy = z + np.random.normal(0, np.sqrt(np.diag(covariance_matrix)), size=len(z))
+    z_noisy = z + np.random.normal(0.0, np.sqrt(diag_R))
     print("...Noisy measurements generated.")
 
     # --- 3) SETUP THE "ASSUMED CORRECT" (UNMODIFIED) MODEL ---
@@ -133,7 +113,9 @@ def main():
     # - x_f_assumed: An initial state guess from the "assumed" world.
     # - Y_pu_assumed, mpc_assumed: The model of the "assumed" world.
     x_est, success, lambdaN = run_lagrangian_polar(
-        z_noisy, x_f_assumed, busphase_map_assumed, Y_pu_assumed, covariance_matrix, mpc_assumed
+        z_noisy, x_f_assumed, busphase_map_assumed,
+        Y_pu_assumed, R,  # <-- pass R, not covariance_matrix
+        mpc_assumed
     )
 
     if not success:
