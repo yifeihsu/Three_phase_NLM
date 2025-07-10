@@ -1,18 +1,8 @@
-# ─────────────────────── midspan_hif_utils.py (rev‑2) ──────────────────
-"""
-Utilities to   (a) clone a pristine DSS file and inject a *mid‑span* HIF
-               (b) perform Kron reduction on a sparse Y‑bus
-
-2025‑06‑23  •  pure‑ASCII version (Windows‑friendly)
-"""
-from __future__ import annotations
 import re, shutil, pathlib
 from typing import List
 import numpy as np
 from scipy.sparse import csc_matrix
 
-
-# ───────────────────── 1.  Build the faulted .DSS file ────────────────
 def make_midspan_hif_dss(
         pristine_path : str,
         new_path      : str,
@@ -93,10 +83,7 @@ def make_midspan_hif_dss(
     with dst.open("w", encoding=encoding, errors="replace") as f:
         f.writelines(new_lines)
 
-
-# ───────────────────── 2.  Plain Kron reduction helper  ───────────────
 def kron_reduce(Y: csc_matrix, eliminate: List[int]) -> csc_matrix:
-    """Standard   Ŷ = Yaa − Yab · Ybb⁻¹ · Yba   reduction."""
     keep = np.setdiff1d(np.arange(Y.shape[0]), eliminate)
     Yaa  = Y[keep, :][:, keep].toarray()
     Yab  = Y[keep, :][:, eliminate].toarray()

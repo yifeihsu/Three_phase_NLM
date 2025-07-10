@@ -1,24 +1,24 @@
-                   clear
+clear
 Set DefaultBaseFrequency=60
 
 new circuit.ieee390 basekv=230 pu=1.05 bus1=P1 mvasc3=200000 mvasc1=200000
-
+ 
 new LineCode.Switch nphases=3 r1=1e-6 r0=1e-6 x1=1e-6 x0=1e-6 c1=0 c0=0
-
+ 
 new LineSpacing.101 nconds=3 nphases=3 units=ft x=[0,10,20] h=[50,50,50]
 new LineSpacing.102 nconds=3 nphases=3 units=in x=[0,3,6] h=[-48,-48,-48]
 new LineSpacing.103 nconds=4 nphases=3 units=in x=[-2.1213,0,2.1213,0] h=[50.1213,48,50.1213,52.2426]
-
+ 
 new WireData.397AA gmr=0.0277 rac=0.0477 diam=0.806 gmrunits=ft radunits=in runits=mi normamps=594
 new CNData.1000AA gmrac=0.04683 rac=0.1214 diam=1.124 gmrunits=ft runits=mi radunits=in normamps=615
 ~ diacable=2.08 k=21 gmrstrand=0.00417 rstrand=0.1809 diastrand=0.1285
 ~ inslayer=0.25 diains=1.64
 new WireData.UG500Cu gmr=0.026 rac=0.206 diam=0.814 gmrunits=ft radunits=in runits=mi normamps=430
-
+ 
 new LineGeometry.Trans nconds=3 nphases=3 spacing=101 wires=[397AA 397AA 397AA]
 new LineGeometry.Pri nconds=3 nphases=3 spacing=102 cncables=[1000AA 1000AA 1000AA]
 new LineGeometry.Sec nconds=4 nphases=3 reduce=y spacing=103 wires=[UG500Cu UG500Cu UG500Cu UG500Cu]
-
+ 
 new Line.1 bus1=P1.1.2.3 bus2=P2.1.2.3 phases=3 length=150 units=ft geometry=Trans
 new Line.2 bus1=P2.1.2.3 bus2=P3.1.2.3 phases=3 length=150 units=ft geometry=Trans
 new Line.3 bus1=P2.1.2.3 bus2=P7.1.2.3 phases=3 length=150 units=ft geometry=Trans
@@ -998,12 +998,12 @@ new Line.279 bus1=S116.1.2.3 bus2=S121.1.2.3 phases=3 length=25 units=ft geometr
   new Line.279_4 bus1=S116.1.2.3 bus2=S121.1.2.3 phases=3 length=25 units=ft geometry=Sec
   new Line.279_5 bus1=S116.1.2.3 bus2=S121.1.2.3 phases=3 length=25 units=ft geometry=Sec
   new Line.279_6 bus1=S116.1.2.3 bus2=S121.1.2.3 phases=3 length=25 units=ft geometry=Sec
-new Line.280 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
-  new Line.280_2 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
-  new Line.280_3 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
-  new Line.280_4 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
-  new Line.280_5 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
-  new Line.280_6 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
+!new Line.280 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
+!  new Line.280_2 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
+!  new Line.280_3 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
+!  new Line.280_4 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
+!  new Line.280_5 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
+!  new Line.280_6 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
 new Line.281 bus1=S16.1.2.3 bus2=S25.1.2.3 phases=3 length=100 units=ft geometry=Sec
   new Line.281_2 bus1=S16.1.2.3 bus2=S25.1.2.3 phases=3 length=100 units=ft geometry=Sec
   new Line.281_3 bus1=S16.1.2.3 bus2=S25.1.2.3 phases=3 length=100 units=ft geometry=Sec
@@ -1344,7 +1344,7 @@ new Line.79_sw bus1=S238.1.2.3 bus2=S237.1.2.3 phases=3 switch=yes linecode=swit
   close Line.79_sw 1
 new Line.80_sw bus1=S240.1.2.3 bus2=S239.1.2.3 phases=3 switch=yes linecode=switch length=1
   close Line.80_sw 1
-
+ 
 new Load.1 phases=1 bus1=S193.1 conn=w kv=0.277 kw=364.07 pf=0.97
 new Load.2 phases=1 bus1=S193.2 conn=w kv=0.277 kw=413.73 pf=0.94
 new Load.3 phases=1 bus1=S193.3 conn=w kv=0.277 kw=360.05 pf=0.91
@@ -1969,7 +1969,7 @@ new Load.621 phases=1 bus1=S144.3 conn=w kv=0.120 kw=14.78 pf=0.98
 new Load.622 phases=1 bus1=S144.1.2 conn=d kv=0.208 kw=28.76 pf=0.78
 new Load.623 phases=1 bus1=S144.2.3 conn=d kv=0.208 kw=37.85 pf=0.81
 new Load.624 phases=1 bus1=S144.3.1 conn=d kv=0.208 kw=29.31 pf=0.82
-
+ 
 new Transformer.1 buses=[P4,P5] kvs=[229.999,13.800] kvas=[50000,50000] conns=[d,d] xhl=7.5 %loadloss=0.75
 new Transformer.2 buses=[P8,P9] kvs=[229.999,13.800] kvas=[50000,50000] conns=[d,d] xhl=7.5 %loadloss=0.75
 new Transformer.3 buses=[P41,S196] kvs=[13.800,0.480] kvas=[2000,2000] conns=[d,w] xhl=7 %loadloss=0.7
@@ -2040,7 +2040,7 @@ new Transformer.67 buses=[P30,S187] kvs=[13.800,0.208] kvas=[1000,1000] conns=[d
 new Transformer.68 buses=[P67,S186] kvs=[13.800,0.208] kvas=[1000,1000] conns=[d,w] xhl=5 %loadloss=0.5
 new Transformer.69 buses=[P32,S191] kvs=[13.800,0.208] kvas=[1000,1000] conns=[d,w] xhl=5 %loadloss=0.5
 new Transformer.70 buses=[P84,S190] kvs=[13.800,0.208] kvas=[1000,1000] conns=[d,w] xhl=5 %loadloss=0.5
-
+ 
 Set Voltagebases=[230, 13.8, 0.48, 0.208]
 calcv
 buscoords buscoords.dat

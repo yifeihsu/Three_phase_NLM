@@ -44,8 +44,8 @@ New Linecode.Kersting nphases=3  Units=mi
 ~ Xmatrix=[1.07805  |0.501679  1.04818  |0.384938  0.423653  1.06507  ]
 ~ Cmatrix=[15.0675  |-4.86254  15.8754  |-1.85328  -3.09107  14.3258  ]
 
-! Edit line.line1 Linecode=Kersting
-Edit line.line2 Linecode=Kersting
+! Edit line.1 Linecode=Kersting
+! Edit line.2 Linecode=Kersting
 
 set voltagebases=[12.47, 4.16] 
 calcvoltagebases     ! **** let DSS compute voltage bases

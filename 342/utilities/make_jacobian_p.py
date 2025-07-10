@@ -1,11 +1,3 @@
-"""
-Analytical Jacobian of the reduced measurement vector with respect to
-line parameters (12 per three‑phase line: 6 × R, 6 × X).
-
-Only the 2·N bus‑injection rows are non‑zero; the |V| rows are identically
-zero because voltage magnitude does not depend directly on line parameters.
-"""
-from __future__ import annotations
 
 import numpy as np
 from scipy.sparse import csr_matrix

@@ -1,223 +1,238 @@
-"""
-4‑bus feeder with a *mid‑span* High‑Impedance Fault (HIF) injected on
-Line.2 (n3–n4) at its midpoint.  The script
-
-1. creates  “4Bus-YY-Bal_HIF.dss” on‑the‑fly,
-2. parses both the original and the faulted circuit,
-3. runs a time‑domain simulation of the stochastic Mayr‑Emanuel arc,
-4. at every time step:
-      • updates the 1‑φ HIF load power,
-      • solves the circuit
-5. performs Kron reduction to give measurements whose size/order match
-   the 4‑bus network.
-"""
-import numpy as np, math, opendssdirect as dss
-from scipy.sparse import csc_matrix
-import time as _time
-from pathlib import Path
+import math, os, time
+import numpy as np
+from opendssdirect import dss
 from midspan_hif_utils import make_midspan_hif_dss, kron_reduce
 from parse_opendss_file import (
-    parse_opendss_to_mpc, build_global_y_per_unit,
-    merge_closed_switches_in_mpc_and_dss,
+    parse_opendss_to_mpc, merge_closed_switches_in_mpc_and_dss,
+    build_global_y_per_unit,
 )
 from cal_pf import run_newton_powerflow_3p
-from utilities.mea_fun        import measurement_function
+from utilities.mea_fun import measurement_function
+from lagrangian_m import run_lagrangian_polar
 from utilities.report_results import report_results
 
-def dss_cmd(cmd: str):
-    return dss.Command(cmd)
-
-# ───────────────────────── 1.  File names & constants ──────────────────
 PRISTINE_DSS = "4Bus-YY-Bal.DSS"
-FAULT_DSS    = "4Bus-YY-Bal_HIF.dss"     # auto‑generated below
-TARGET_LINE  = "line.2"                  # ← split this one
-FAULT_BUS    = "FaultBus"                # new mid‑span node
+FAULT_DSS    = "4Bus-YY-Bal_HIF.dss"
+TARGET_LINE  = "line.2"              # split this one
+FAULT_BUS    = "FaultBus"
+R_HIF        = 150.0               # ohms line‑to‑neutral (≈ 0.5A @2.4kV)
+SWITCH_THRES = 0.1                   # Ω threshold to merge DSS switches
+STD_P, STD_Q, STD_V = 1e-3, 1e-3, 1e-5
 
-import os
-FAULT_DSS_ABS = os.path.abspath(FAULT_DSS).replace(os.sep, "/")
+def add_kw_for_constant_resistance(dss_file: str, r_ohm: float, fault_bus: str):
+    txt = open(dss_file, "r").read().splitlines()
+    for k, line in enumerate(txt):
+        if f"New Load.HIF_Load" in line:
+            kv_ln = 4.16 / math.sqrt(3)
+            p_kw = (kv_ln * 1e3) ** 2 / r_ohm / 1e3
+            txt[k] = (f"New Load.HIF_Load Bus1={fault_bus}.1 Phases=1 "
+                      f"Conn=Wye Model=2 kW={p_kw:.6g} kvar=0 kV={kv_ln:.4g}")
+            break
+    open(dss_file, "w").write("\n".join(txt))
 
-# Mayr/Emanuel parameters
-V_ARC_P, V_ARC_N = 1000.0, 1100.0        # [V_ln]
-TAU, P_COOL       = 300e-6, 2.8e6
-G_MIN, G_MAX      = 1e-7, 0.02           # [S]
-SIGMA_NOISE       = 5e-6
-R_MEAN, R_SIGMA   = 300.0, 0.6
-DT, N_STEPS       = 20e-6, 5_000         # 20µs × 5000 ≈ 0.1s
+def main():
+    # 1)  create a DSS file with a constant‑R HIF
+    make_midspan_hif_dss(PRISTINE_DSS, FAULT_DSS, TARGET_LINE)
+    add_kw_for_constant_resistance(FAULT_DSS, R_HIF, FAULT_BUS)
 
-# ───────────────────────── 2.  Helpers (arc model) ─────────────────────
-def hif_current(v: float, g: float) -> float:
-    if   v >  V_ARC_P: return (v -  V_ARC_P) * g
-    elif v < -V_ARC_N: return (v +  V_ARC_N) * g # Corrected line
-    return 0.0
+    # 2)  parse pristine and faulted circuits
+    mpc_orig = parse_opendss_to_mpc(PRISTINE_DSS, baseMVA=1.0, lc_filename="LineConstantsCode4.txt",
+                                    slack_bus="sourcebus")
+    mpc_fault = parse_opendss_to_mpc(FAULT_DSS, baseMVA=1.0, lc_filename="LineConstantsCode4.txt",
+                                     slack_bus="sourcebus")
+    merge_closed_switches_in_mpc_and_dss(mpc_fault, SWITCH_THRES)
 
-def mayr_update(g: float, p: float, dt: float) -> float:
-    g_dot = ((p / P_COOL) - g) / TAU
-    noise = np.random.normal(0.0, SIGMA_NOISE * math.sqrt(dt))
-    g_new = g + g_dot * dt + noise
-    return float(np.clip(g_new, G_MIN, G_MAX))
+    # 3)  run PF on augmented network to get "true" faulted voltages
+    Vr, Vi, bp_full = run_newton_powerflow_3p(mpc_fault, 1e-6, 20)
+    Vc_full = Vr + 1j * Vi
+    report_results(Vr, Vi, bp_full, mpc_fault)
 
-# ───────────────────────── 3.  Build the faulted DSS file ──────────────
-make_midspan_hif_dss(PRISTINE_DSS, FAULT_DSS, TARGET_LINE)
+    # 4)  Build the full Y-Bus for the faulted network
+    dss.Command("Clear")
+    dss.Command(f'Redirect "{FAULT_DSS}"')
+    Y_full, node_order_list = build_global_y_per_unit(mpc_fault)
 
-# ───────────────────────── 4.  Parse both circuits ─────────────────────
-mpc_orig = parse_opendss_to_mpc(PRISTINE_DSS, baseMVA=1.0, lc_filename="LineConstantsCode4.txt",
-                               slack_bus="sourcebus")
-merge_closed_switches_in_mpc_and_dss(mpc_orig, 0.1)
+    # --- Add HIF shunt admittance to the Y matrix ---
+    hif_admittance = 1 / R_HIF  # S (line-to-neutral)
+    fault_bus_id = mpc_fault["busname_to_id"][FAULT_BUS.lower()]
+    node_phase_map = {node_name: i for i, node_name in enumerate(node_order_list)}
+    hif_node_name = f"bus{fault_bus_id}.1"
 
-mpc_fault = parse_opendss_to_mpc(FAULT_DSS,   baseMVA=1.0, lc_filename="LineConstantsCode4.txt",
-                                 slack_bus="sourcebus")
-merge_closed_switches_in_mpc_and_dss(mpc_fault, 0.1)
+    if hif_node_name in node_phase_map:
+        hif_idx = node_phase_map[hif_node_name]
+        v_base_ln = (4.16e3 / math.sqrt(3))
+        s_base = mpc_fault["baseMVA"] * 1e6
+        z_base = v_base_ln ** 2 / s_base
+        y_base = 1 / z_base
+        y_hif_pu = hif_admittance / y_base
+        Y_full = Y_full.tolil()
+        Y_full[hif_idx, hif_idx] += y_hif_pu
+        Y_full = Y_full.tocsc()
 
-# ───────────────────────── 5.  One‑shot PF on faulted topology ─────────
-Vr_f, Vi_f, bp_fault = run_newton_powerflow_3p(mpc_fault, 1e-6, 20)
-Vc_f  = Vr_f + 1j * Vi_f
-report_results(Vr_f, Vi_f, bp_fault, mpc_fault)
+    # --- COMPARISON OF POWER INJECTION CALCULATION METHODS ---
+    print("\n" + "=" * 50)
+    print("--- Comparing Injection Calculation Methods ---")
+    print("=" * 50)
 
-# ───────────────────────── 6.  Kron reduction --------------------------
-Y_full, _ = build_global_y_per_unit(mpc_fault)
-fault_id  = mpc_fault["busname_to_id"][FAULT_BUS.lower()]
-elim_idx  = [bp_fault[(fault_id, ph)] for ph in range(3)]
-Y_red     = kron_reduce(Y_full, elim_idx)
+    # Method 1: Generate from Full Model, then Delete FaultBus measurements
+    print("Calculating injections using full faulted model...")
+    x_full = np.hstack([np.abs(Vc_full), np.angle(Vc_full)])
+    z_full = measurement_function(x_full, Y_full, mpc_fault, bp_full)
+    n_nodes_full = len(bp_full)
 
-# --- keep the original bus ordering for the SE / measurement stage -----
-bp_orig   = {(int(r[0]), ph):   3*idx + ph
-             for idx, r in enumerate(mpc_orig["bus3p"])
-             for ph in range(3)}
-Vc_red    = np.array([Vc_f[ bp_fault[(int(r[0]), ph)] ]
-                      for r in mpc_orig["bus3p"]  for ph in range(3)])
-x_red     = np.hstack([np.abs(Vc_red), np.angle(Vc_red)])
+    indices_to_remove = []
+    for ph in range(3):
+        node_idx = bp_full.get((fault_bus_id, ph))
+        if node_idx is not None:
+            indices_to_remove.append(node_idx)  # P
+            indices_to_remove.append(n_nodes_full + node_idx)  # Q
+    injections_from_full = np.delete(z_full[:2 * n_nodes_full], sorted(indices_to_remove))
 
-z         = measurement_function(x_red, Y_red, mpc_orig, bp_orig)
+    # Method 2: Reduce Model with Kron Reduction, then Generate
+    print("Calculating injections using Kron-reduced model...")
+    bp_red = {(int(row[0]), ph): 3 * i + ph for i, row in enumerate(mpc_orig["bus3p"]) for ph in range(3)}
+    elim_idx = [bp_full[(fault_bus_id, ph)] for ph in range(3)]
+    Y_red = kron_reduce(Y_full, elim_idx)
+    V_red = np.array([Vc_full[bp_full[(int(row[0]), ph)]] for row in mpc_orig["bus3p"] for ph in range(3)])
+    x_red = np.hstack([np.abs(V_red), np.angle(V_red)])
+    z_reduced = measurement_function(x_red, Y_red, mpc_orig, bp_red)
+    injections_from_reduced = z_reduced[:2 * len(bp_red)]
 
-# Add white noise identical to the template in case_4.py
-std_P, std_Q, std_V = 1e-4, 1e-4, 1e-5
-n_busph   = len(bp_orig)
-n_PQflow  = 4 * 3 * len(mpc_orig["line3p"])
-Sigma         = np.diag([std_P**2]*n_busph + [std_Q**2]*n_busph +
-                    [std_P**2]*n_PQflow + [std_V**2]*n_busph)
-z_noisy   = z + np.random.normal(0.0, np.sqrt(np.diag(Sigma)), size=len(z))
+    print("\n" + "=" * 50)
+    print("--- Verifying Kron Reduction Correctness ---")
+    print("=" * 50)
 
-print(f"Measurement length  : {len(z_noisy)}  (unchanged)")
-print(f"Original bus count  : {len(mpc_orig['bus3p'])}")
-print("Kron‑reduced FaultBus; ready for state‑estimation, etc.")
+    # 1. Get the full voltage vector from the power flow solution
+    # Vc_full is already available
 
-# ------------------------------------------------------------------
-# 7.  Time‑domain HIF simulation
-# ------------------------------------------------------------------
-dss_cmd("clear")                                    # start from a clean slate
-dss_cmd(f'compile "{FAULT_DSS_ABS}"')               # absolute path, quoted
+    # 2. Calculate the true current injections for the ENTIRE network
+    I_full_all_nodes = Y_full @ Vc_full
 
-if not dss.Circuit.Name():                          # empty ⇒ compile failed
-    raise RuntimeError("OpenDSS compile failed:\n" + dss.Text.Result())
+    # 3. Partition the full currents and voltages
+    # Create a list of retained indices
+    retained_idx = sorted([v for k, v in bp_full.items() if k[0] != fault_bus_id])
+    # The eliminated indices 'elim_idx' are already available and sorted
+    # elim_idx = sorted([bp_full[(fault_bus_id, ph)] for ph in range(3)])
 
-dss_cmd("calcvoltagebases")
-dss_cmd("reset monitors")                           # optional clean‑up
+    # Extract the "true" currents and voltages for the retained nodes
+    I_m_true = I_full_all_nodes[retained_idx]
+    V_m = Vc_full[retained_idx]  # This should be identical to V_red
 
-# --- initialise the snapshot solver -------------------------------
-dss.Solution.Mode(0)        # 0 = SNAP
-dss.Solution.Number(1)      # exactly one step per SolveSnap()
-DT_SEC = DT                 # DT was defined earlier (20e‑6 s)
-dss.Solution.StepSize(DT_SEC)
+    # 4. Calculate equivalent current injections using the reduced matrix
+    I_m_equivalent = Y_red @ V_red
 
-t_log, v_log, i_log, g_log, p_log = [], [], [], [], []
+    if np.allclose(I_m_true, I_m_equivalent):
+        print("SUCCESS: Kron Reduction is correct. Current injections match.")
+    else:
+        print("ERROR: Kron Reduction is incorrect or the underlying assumptions are violated.")
+        print(f"Max absolute difference in currents: {np.max(np.abs(I_m_true - I_m_equivalent)):.6g}")
 
-# --- arc model state ----------------------------------------------
-sim_time = 0.0
-g_arc    = G_MIN
-i_prev   = 0.0
+    print("=" * 50 + "\n")
 
-print(f"\nRunning dynamic arc simulation: {N_STEPS} steps * "
-      f"{DT_SEC*1e6:.0f} us")
+    # --- COMPARISON OF POWER INJECTION CALCULATION METHODS ---
+    print("\n" + "=" * 60)
+    print("--- Verifying Injection Calculation Equivalence ---")
+    print("=" * 60)
 
-tic = _time.time()
-for k in range(N_STEPS):
-    dss.Solution.SolveSnap()
+    # --- Method 1: Generate from Full Model, then extract injections ---
+    x_full = np.hstack([np.abs(Vc_full), np.angle(Vc_full)])
+    z_full = measurement_function(x_full, Y_full, mpc_fault, bp_full)
 
-    # instantaneous voltage at FaultBus.1 ---------------------------
-    dss.Circuit.SetActiveBus(FAULT_BUS)
-    kv_ln_base = dss.Bus.kVBase()
-    mag_pu, ang_deg = dss.Bus.puVmagAngle()[:2]
-    v_peak  = kv_ln_base * 1000.0 * (2.0 ** 0.5)
-    theta   = 2.0 * math.pi * 60.0 * sim_time + math.radians(ang_deg)
-    v_inst  = v_peak * mag_pu * math.cos(theta)
+    # --- Method 2: Reduce Model with Kron Reduction, then Generate ---
+    bp_red = {(int(row[0]), ph): 3 * i + ph for i, row in enumerate(mpc_orig["bus3p"]) for ph in range(3)}
+    elim_idx = [bp_full[(fault_bus_id, ph)] for ph in range(3)]
+    Y_red = kron_reduce(Y_full, elim_idx)
+    V_red = np.array([Vc_full[bp_full[(int(row[0]), ph)]] for row in mpc_orig["bus3p"] for ph in range(3)])
+    x_red = np.hstack([np.abs(V_red), np.angle(V_red)])
+    z_reduced = measurement_function(x_red, Y_red, mpc_orig, bp_red)
 
-    # Mayr‑Emanuel arc model ---------------------------------------
-    i_arc  = hif_current(v_inst, g_arc)
-    p_arc  = v_inst * i_arc
-    if (i_prev * i_arc) < 0.0 and abs(i_prev) > 1e-6:
-        g_arc = 1.0 / np.random.lognormal(math.log(R_MEAN), R_SIGMA)
-    g_arc  = mayr_update(g_arc, p_arc, DT_SEC)
-    i_prev = i_arc
+    # --- Detailed Comparison for Debugging ---
+    print("Debugging injections for Bus 3 and Bus 4, Phase A (node 1)...")
 
-    dss_cmd(f'edit Load.HIF_Load kW={p_arc/1000.0:.9f}')
+    # Get indices for Bus 3, Phase A (0)
+    idx_full_b3pA = bp_full.get((3, 0))
+    idx_red_b3pA = bp_red.get((3, 0))
 
-    t_log.append(sim_time)
-    v_log.append(v_inst)
-    i_log.append(i_arc)
-    g_log.append(g_arc)
-    p_log.append(p_arc)
+    # Get indices for Bus 4, Phase A (0)
+    idx_full_b4pA = bp_full.get((4, 0))
+    idx_red_b4pA = bp_red.get((4, 0))
 
-    sim_time += DT_SEC
-    if (k + 1) % 1000 == 0:
-        print(f"  {k+1}/{N_STEPS} steps complete", end="\r")
+    n_nodes_full = len(bp_full)
+    n_nodes_red = len(bp_red)
 
-print(f"\nDynamic simulation finished in {(_time.time() - tic):.2f} s")
-# ------------------------------------------------------------------
-# 9.  Plot V(t), i(t) and g(t)  (matplotlib, one figure per signal)
-# ------------------------------------------------------------------
-import matplotlib.pyplot as plt
+    # Extract P and Q injections for comparison
+    P_full_b3 = z_full[idx_full_b3pA]
+    Q_full_b3 = z_full[n_nodes_full + idx_full_b3pA]
+    P_red_b3 = z_reduced[idx_red_b3pA]
+    Q_red_b3 = z_reduced[n_nodes_red + idx_red_b3pA]
 
-# Convert lists to NumPy arrays (not strictly necessary, but handy)
-t_arr = np.array(t_log)        # seconds
-v_arr = np.array(v_log)        # volts (instantaneous)
-i_arr = np.array(i_log)        # amps
-g_arr = np.array(g_log)        # siemens
-p_arr = np.array(p_log)
+    P_full_b4 = z_full[idx_full_b4pA]
+    Q_full_b4 = z_full[n_nodes_full + idx_full_b4pA]
+    P_red_b4 = z_reduced[idx_red_b4pA]
+    Q_red_b4 = z_reduced[n_nodes_red + idx_red_b4pA]
 
-# 9‑A.  Voltage
-plt.figure()
-plt.plot(t_arr, v_arr)
-plt.title("Phase‑A Voltage at FaultBus.1")
-plt.xlabel("time [s]")
-plt.ylabel("v_inst [V]")
-plt.grid(True)
+    print("\n--- Bus 3, Phase A ---")
+    print(f"Voltage (Full Model):  {Vc_full[idx_full_b3pA]:.6f}")
+    print(f"Voltage (Red. Model):  {V_red[idx_red_b3pA]:.6f}")
+    print(f"P_inj (Full Model):    {P_full_b3:.6f}")
+    print(f"P_inj (Red. Model):    {P_red_b3:.6f}")
+    print(f"Q_inj (Full Model):    {Q_full_b3:.6f}")
+    print(f"Q_inj (Red. Model):    {Q_red_b3:.6f}")
+
+    print("\n--- Bus 4, Phase A ---")
+    print(f"Voltage (Full Model):  {Vc_full[idx_full_b4pA]:.6f}")
+    print(f"Voltage (Red. Model):  {V_red[idx_red_b4pA]:.6f}")
+    print(f"P_inj (Full Model):    {P_full_b4:.6f}")
+    print(f"P_inj (Red. Model):    {P_red_b4:.6f}")
+    print(f"Q_inj (Full Model):    {Q_full_b4:.6f}")
+    print(f"Q_inj (Red. Model):    {Q_red_b4:.6f}")
+
+    # Overall check
+    injections_from_full = np.delete(z_full[:2 * n_nodes_full],
+                                     [idx for idx in sorted(indices_to_remove) if idx < 2 * n_nodes_full])
+    injections_from_reduced = z_reduced[:2 * len(bp_red)]
+
+    if np.allclose(injections_from_full, injections_from_reduced):
+        print("\nSUCCESS: Power injections from both methods are identical.")
+    else:
+        print("\nERROR: Power injections from the two methods DO NOT match.")
+    print("=" * 60 + "\n")
+
+    # 5)  Measurement generation for State Estimation (using Method 2 as per your setup)
+    z = z_reduced  # Use the measurements from the reduced model
+
+    # Add noise
+    R = np.diag([STD_P ** 2] * len(bp_red) + [STD_Q ** 2] * len(bp_red) + [STD_V ** 2] * len(bp_red))
+    z_noisy = z + np.random.normal(0.0, np.sqrt(np.diag(R)), size=len(z))
+
+    # 6)  State estimation using the PRISTINE model
+    dss.Command("Clear")
+    dss.Command(f'Redirect "{PRISTINE_DSS}"')
+    Y_orig, _ = build_global_y_per_unit(mpc_orig)
+
+    # Compare Y_orig and Y_red
+    if not np.allclose(Y_orig.toarray(), Y_red.toarray()):
+        Y_diff = Y_orig.toarray() - Y_red.toarray()
+
+    x_est, converged, lambdaN = run_lagrangian_polar(
+        z_noisy, V_red, bp_red, Y_orig, R, mpc_orig
+    )
+    if not converged:
+        print("State estimator did not converge.")
+        return
+
+    # 7) Report the largest NLM
+    idx = int(np.argmax(np.abs(lambdaN)))
+    node_to_busphase = {v: k for k, v in bp_red.items()}
+    node_idx = idx // 2
+    param_type = "Conductance (G)" if (idx % 2) == 0 else "Susceptance (B)"
+    bus_id, phase_idx = node_to_busphase[node_idx]
+    phase_char = chr(ord('A') + phase_idx)
+
+    print(f"Largest multiplier: |lambda| = {abs(lambdaN[idx]):.3g} "
+          f"at Bus {bus_id}, Phase {phase_char}, for parameter: {param_type}")
 
 
-print(f"min(i_arc) = {i_arr.min():.3e} A,  max(i_arc) = {i_arr.max():.3e} A")
-
-# 9‑B.  Arc current
-plt.figure()
-plt.plot(t_arr, i_arr)
-plt.title("Arc Current i(t)")
-plt.xlabel("time [s]")
-plt.ylabel("i_arc [A]")
-plt.grid(True)
-
-# 9‑C.  Arc conductance
-plt.figure()
-plt.plot(t_arr, g_arr)
-plt.title("Arc Conductance g(t)")
-plt.xlabel("time [s]")
-plt.ylabel("g_arc [S]")
-plt.grid(True)
-
-# 9‑D.  Arc power
-plt.figure()
-plt.plot(t_arr, p_arr)
-plt.title("Arc Power p(t)")
-plt.xlabel("time [s]")
-plt.ylabel("p_arc [W]")
-plt.grid(True)
-plt.tight_layout()
-# Show all plots
-# --- At the end of the script, before the plots ---
-
-# 1. Calculate the overall average active power
-P_active_overall = np.mean(p_arr)
-
-print(f"\n--- Power Calculations ---")
-print(f"Peak Instantaneous Power: {p_arr.max() / 1000:.2f} kW")
-print(f"Overall Active Power (P): {P_active_overall / 1000:.2f} kW")
-
-plt.show()
-print("All done – z_noisy ready for your state estimator.")
+# ------------------------------------------------------------------------
+if __name__ == "__main__":
+    main()
