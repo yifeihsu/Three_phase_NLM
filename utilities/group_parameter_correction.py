@@ -15,6 +15,7 @@ KERSTING_X = np.array(
 )
 
 
+
 def _expand_state_vector(x_sub, nb, ref_bus):
     """Expand reduced state vector back to full dimension."""
     n_states_per_scan = 2 * nb - 1
@@ -86,6 +87,7 @@ def correct_parameter_group_multi_scan(
     success_correction = 0
 
     # extract current parameter guess from the mpc structure
+
     # start from the erroneous linecode parameters directly
     R_init_vec = KERSTING_R.copy()
     X_init_vec = KERSTING_X.copy()
@@ -98,6 +100,7 @@ def correct_parameter_group_multi_scan(
 
     n_states_per_scan = 2 * nb - 1
     N = s * n_states_per_scan + 12
+
 
     ref_bus = 0
     for i, row in enumerate(mpc_with_error["bus3p"]):
