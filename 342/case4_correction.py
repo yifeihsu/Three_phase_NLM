@@ -81,6 +81,13 @@ def main():
         busphase_map,
         mpc["baseMVA"],
     )
-    print("Corrected R,X for line", line_idx + 1, "=>", corrected, "success", success_corr)
+    print(
+        "Corrected impedance parameters for line",
+        line_idx + 1,
+        "=>",
+        corrected,
+        "success",
+        success_corr,
+    )
 if __name__ == "__main__":
     main()

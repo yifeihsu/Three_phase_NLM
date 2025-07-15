@@ -6,6 +6,15 @@ from .make_jacobian import jacobian
 from .make_jacobian_p import jacobian_line_params, build_param_info
 from parse_opendss_file import build_global_y_per_unit
 
+# Impedance matrices for the erroneous LineCode ``Kersting`` (ohm/mile)
+KERSTING_R = np.array(
+    [0.457552, 0.155951, 0.153485, 0.466628, 0.158007, 0.461473], dtype=float
+)
+KERSTING_X = np.array(
+    [1.07805, 0.501679, 0.384938, 1.04818, 0.423653, 1.06507], dtype=float
+)
+
+
 
 def _expand_state_vector(x_sub, nb, ref_bus):
     """Expand reduced state vector back to full dimension."""
@@ -36,42 +45,17 @@ def _update_line_params_in_mpc(mpc, line_idx, new_R, new_X):
         mpc["lc"][idx, 1:7] = new_R
         mpc["lc"][idx, 7:13] = new_X
 
-    # Try updating the active OpenDSS line object as well so that
-    # ``build_global_y_per_unit`` reflects the new parameters.
-    try:
-        import opendssdirect as dss
-
-        line_name = str(line_row[6])
-        dss.Lines.Name(line_name)
-
-        # Convert the symmetric-lower vector [r11, r21, r31, r22, r32, r33]
-        # to a full 3x3 matrix in row-major order.
-        rmat = [
-            new_R[0], new_R[1], new_R[2],
-            new_R[1], new_R[3], new_R[4],
-            new_R[2], new_R[4], new_R[5],
-        ]
-        xmat = [
-            new_X[0], new_X[1], new_X[2],
-            new_X[1], new_X[3], new_X[4],
-            new_X[2], new_X[4], new_X[5],
-        ]
-
-        dss.Lines.RMatrix(rmat)
-        dss.Lines.XMatrix(xmat)
-    except Exception:
-        # If OpenDSS is not available or the update fails, ignore.
-        pass
+    # We do not persist these changes to the active OpenDSS model here.
+    # ``build_global_y_per_unit`` will therefore rely on this modified copy
+    # of ``mpc`` when computing the admittance matrix for each iteration.
 
 
 def calculate_param_jacobian_for_line(x, Ybus, mpc, busphase_map, line_idx):
-    """Return Jacobian of measurements w.r.t. [R,X] of a given line."""
+    """Return Jacobian of measurements w.r.t. the 12 impedance parameters of a line."""
     Hp_full = jacobian_line_params(x, Ybus, mpc, busphase_map)
     param_info = build_param_info(mpc)
-    cols = []
     start_idx = line_idx * 12
-    cols.append(start_idx + 0)  # Zaa_R
-    cols.append(start_idx + 6)  # Zaa_X
+    cols = list(range(start_idx, start_idx + 12))
     return Hp_full[:, cols]
 
 
@@ -86,13 +70,15 @@ def correct_parameter_group_multi_scan(
     max_iter=30,
     tol=5e-3,
 ):
-    """Correct R and X of a specific line using multiple measurement scans.
+    """Correct the 6 ``R`` and 6 ``X`` impedance values of a specific line.
 
     Parameters are adapted from the MATLAB reference implementation but
-    tailored for the three-phase distribution ``mpc`` structure.
-    ``line_to_correct_idx`` is 0-based.
-    Returns ``(corrected_params, success_flag)`` where ``corrected_params`` is
-    ``[R_est, X_est]``.
+    tailored for the three-phase distribution ``mpc`` structure.  The line
+    index is 0-based.  The routine returns ``(corrected_params, success_flag)``
+    where ``corrected_params`` contains the 12 updated impedance parameters in
+    the order ``[Raa, Rab, Rac, Rbb, Rbc, Rcc, Xaa, Xab, Xac, Xbb, Xbc, Xcc]``.
+    The initial guess for the impedance values comes from the predefined
+    LineCode ``Kersting`` rather than the ``mpc`` data.
     """
 
     nb = len(busphase_map)
@@ -101,13 +87,11 @@ def correct_parameter_group_multi_scan(
     success_correction = 0
 
     # extract current parameter guess from the mpc structure
-    line_row = mpc_with_error["line3p"][line_to_correct_idx]
-    lcid = int(line_row[4])
-    mask = mpc_with_error["lc"][:, 0] == lcid
-    idx = np.where(mask)[0][0]
-    R_init = float(mpc_with_error["lc"][idx, 1])
-    X_init = float(mpc_with_error["lc"][idx, 7])
-    p_g_current = np.array([R_init, X_init], dtype=float)
+
+    # start from the erroneous linecode parameters directly
+    R_init_vec = KERSTING_R.copy()
+    X_init_vec = KERSTING_X.copy()
+    p_g_current = np.hstack([R_init_vec, X_init_vec])
     corrected_params_group = p_g_current.copy()
 
     nz_single = multi_scan_measurements_z.shape[0]
@@ -115,7 +99,8 @@ def correct_parameter_group_multi_scan(
     R_inv_single = sp.linalg.inv(R_single)
 
     n_states_per_scan = 2 * nb - 1
-    N = s * n_states_per_scan + 2
+    N = s * n_states_per_scan + 12
+
 
     ref_bus = 0
     for i, row in enumerate(mpc_with_error["bus3p"]):
@@ -145,7 +130,12 @@ def correct_parameter_group_multi_scan(
             x_scan_k = x_v_current[idx_start:idx_end]
             theta_full, V_full = _expand_state_vector(x_scan_k, nb, ref_bus)
             mpc_iter = mpc_with_error.copy()
-            _update_line_params_in_mpc(mpc_iter, line_to_correct_idx, [p_g_current[0]] * 6, [p_g_current[1]] * 6)
+            _update_line_params_in_mpc(
+                mpc_iter,
+                line_to_correct_idx,
+                p_g_current[:6],
+                p_g_current[6:12],
+            )
             Ybus_iter, _ = build_global_y_per_unit(mpc_iter)
             x_full = np.hstack([V_full, theta_full])
             hx_k = measurement_function(x_full, Ybus_iter, mpc_iter, busphase_map)
@@ -161,7 +151,7 @@ def correct_parameter_group_multi_scan(
             Hp_t_W = Hp_k.T @ Wblock
 
             row_s = slice(idx_start, idx_end)
-            row_p = slice(s * n_states_per_scan, s * n_states_per_scan + 2)
+            row_p = slice(s * n_states_per_scan, s * n_states_per_scan + 12)
 
             G_v[row_s, row_s] = G_v[row_s, row_s] + Ht_W @ J_full
             G_v[row_s, row_p] = G_v[row_s, row_p] + Ht_W @ Hp_k
@@ -176,7 +166,7 @@ def correct_parameter_group_multi_scan(
 
         delta_x_v = sp.linalg.spsolve(G_v, RHS)
         x_v_current += 0.1 * delta_x_v
-        p_g_current = x_v_current[-2:]
+        p_g_current = x_v_current[-12:]
         if np.max(np.abs(delta_x_v)) < tol:
             success_correction = 1
             corrected_params_group = p_g_current.copy()
