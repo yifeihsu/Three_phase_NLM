@@ -8,6 +8,7 @@ from cal_pf import run_newton_powerflow_3p
 from parse_opendss_file import parse_opendss_to_mpc
 from report_results import report_results
 from parse_opendss_file import build_global_y_per_unit, merge_closed_switches_in_mpc_and_dss
+from utilities.group_parameter_correction import correct_parameter_group_multi_scan
 
 def main():
     # 1) Load the data from OpenDSS, func parse_opendss_to_mpc will solve the circuit
@@ -54,5 +55,39 @@ def main():
     error_type = "X" if (largest_idx%12 + 1)//6 == 1 else "R"
     print(f"Largest Lagrangian param => index={(largest_idx%12 + 1)%6}, value={largest_val:.4g}, "
           f"line={largest_idx//12 + 1}, error_type={error_type}")
+
+    # --- Run multi-scan parameter correction for the detected line ---
+    line_idx = largest_idx // 12
+    num_scans = 3
+    m = len(z)
+    nb = len(busphase_map)
+    multi_z = np.zeros((m, num_scans))
+    init_states = np.zeros((2 * nb, num_scans))
+    Vm_init = np.abs(x_f)
+    Va_init_deg = np.degrees(np.angle(x_f))
+    for k in range(num_scans):
+        noise = np.random.normal(0, np.sqrt(np.diag(covariance_matrix)), size=m)
+        multi_z[:, k] = z + noise
+        init_states[:nb, k] = Vm_init
+        init_states[nb:, k] = Va_init_deg
+
+    R_vec = np.diag(covariance_matrix)
+    corrected, success_corr = correct_parameter_group_multi_scan(
+        mpc,
+        line_idx,
+        multi_z,
+        init_states,
+        R_vec,
+        busphase_map,
+        mpc["baseMVA"],
+    )
+    print(
+        "Corrected impedance parameters for line",
+        line_idx + 1,
+        "=>",
+        corrected,
+        "success",
+        success_corr,
+    )
 if __name__ == "__main__":
     main()
