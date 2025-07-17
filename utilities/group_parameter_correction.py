@@ -30,26 +30,6 @@ def _expand_state_vector(x_sub, nb, ref_bus):
     return angles, mags
 
 
-def _update_line_params_in_mpc(mpc, line_idx, new_R, new_X):
-    """Helper to overwrite a line's R/X in the mpc structure.
-
-    This assumes each line has an associated line code stored in ``mpc['lc']``.
-    The line row contains a ``lcid`` in column 4.  All six entries of the R and
-    X matrices for that line code are replaced with ``new_R`` and ``new_X``.
-    """
-    line_row = mpc["line3p"][line_idx]
-    lcid = int(line_row[4])
-    mask = mpc["lc"][:, 0] == lcid
-    if np.any(mask):
-        idx = np.where(mask)[0][0]
-        mpc["lc"][idx, 1:7] = new_R
-        mpc["lc"][idx, 7:13] = new_X
-
-    # We do not persist these changes to the active OpenDSS model here.
-    # ``build_global_y_per_unit`` will therefore rely on this modified copy
-    # of ``mpc`` when computing the admittance matrix for each iteration.
-
-
 def calculate_param_jacobian_for_line(x, Ybus, mpc, busphase_map, line_idx):
     """Return Jacobian of measurements w.r.t. the 12 impedance parameters of a line."""
     Hp_full = jacobian_line_params(x, Ybus, mpc, busphase_map)
@@ -70,16 +50,6 @@ def correct_parameter_group_multi_scan(
     max_iter=30,
     tol=5e-3,
 ):
-    """Correct the 6 ``R`` and 6 ``X`` impedance values of a specific line.
-
-    Parameters are adapted from the MATLAB reference implementation but
-    tailored for the three-phase distribution ``mpc`` structure.  The line
-    index is 0-based.  The routine returns ``(corrected_params, success_flag)``
-    where ``corrected_params`` contains the 12 updated impedance parameters in
-    the order ``[Raa, Rab, Rac, Rbb, Rbc, Rcc, Xaa, Xab, Xac, Xbb, Xbc, Xcc]``.
-    The initial guess for the impedance values comes from the predefined
-    LineCode ``Kersting`` rather than the ``mpc`` data.
-    """
 
     nb = len(busphase_map)
     s = multi_scan_measurements_z.shape[1]
@@ -142,7 +112,7 @@ def correct_parameter_group_multi_scan(
             z_k = multi_scan_measurements_z[:, k]
             delta_z_k = z_k - hx_k
             J_full = jacobian(x_full, Ybus_iter, mpc_iter, busphase_map)
-            J_full = np.delete(J_full, ref_bus + nb, axis=1)
+            J_full = np.delete(J_full, ref_bus, axis=1)
             J_full = np.delete(J_full, ref_bus, axis=1)
             Hp_k = calculate_param_jacobian_for_line(x_full, Ybus_iter, mpc_iter, busphase_map, line_to_correct_idx)
 
