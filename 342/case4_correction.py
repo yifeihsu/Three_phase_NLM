@@ -103,15 +103,9 @@ def main():
 
     if success:
         print("\n--- Parameter Correction Successful! ---")
-        # correct_params = parse_linecode_params(linecode_params_str)
-        #
-        # print(f"Original Parameters (R, X) from LineCode:")
-        # print("R:", correct_params[:6])
-        # print("X:", correct_params[6:])
-        #
-        # print(f"Corrected Parameters (R, X):")
-        # print("R:", corrected_params[:6])
-        # print("X:", corrected_params[6:])
+        print("Corrected Parameters (R, X):")
+        print("R:", corrected_params[:6])
+        print("X:", corrected_params[6:])
     else:
         print("\n--- Parameter Correction Failed to Converge ---")
 

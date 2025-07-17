@@ -8,14 +8,27 @@ from .make_jacobian_p import jacobian_line_params
 from parse_opendss_file import build_global_y_per_unit
 
 # Per-mile impedance matrices for the erroneous LineCode ``Kersting``
-KERSTING_R_PER_MILE = np.array(
-    [0.457552, 0.155951, 0.153485, 0.466628, 0.158007, 0.461473], dtype=float
-)
-KERSTING_X_PER_MILE = np.array(
-    [10.7805, 0.501679, 0.384938, 1.04818, 0.423653, 1.06507], dtype=float
-)
-KERSTING_C_STR = "[15.0675 |-4.86254 15.8754 |-1.85328 -3.09107 14.3258]"
+# KERSTING_R_PER_MILE = np.array(
+#     [0.457552, 0.155951, 0.153485, 0.466628, 0.158007, 0.461473], dtype=float
+# )
+# KERSTING_X_PER_MILE = np.array(
+#     [10.7805, 0.501679, 0.384938, 10.4818, 0.423653, 1.06507], dtype=float
+# )
 
+
+### For 342 case
+KERSTING_R_PER_MILE = np.array(
+    [0.13018, -4.14314E-006, -8.11898E-006, 0.130177, -4.14314E-006, 0.13018], dtype=float
+)
+
+KERSTING_X_PER_MILE = np.array(
+    [0.0668195, -0.000224891, -4.2835E-005, 2.8703539, -0.000224891, 6.13821694], dtype=float
+)
+# KERSTING_X_PER_MILE = np.array(
+#     [0.0668195, -0.000224891, -4.2835E-005, 0.066985, -0.000224891, 0.0668195], dtype=float
+# )
+# KERSTING_C_STR = "[15.0675 |-4.86254 15.8754 |-1.85328 -3.09107 14.3258]"
+KERSTING_C_STR = "[566.228 | 0  566.228 | 0  0  566.228]"
 
 def _build_dss_matrix_string(vals):
     """Builds a matrix string for OpenDSS from a vector of 6 lower-triangle values."""
@@ -54,8 +67,8 @@ def correct_parameter_group_multi_scan(
         initial_states_multi_scan,
         R_variances_vec,
         busphase_map,
-        max_iter=30,
-        tol=5e-3,
+        max_iter=50,
+        tol=1e-2,
 ):
     """
     Corrects the 6 R and 6 X impedance values (per mile) of a specific line by estimating
@@ -141,7 +154,10 @@ def correct_parameter_group_multi_scan(
             print(f"    G_v is ill-conditioned at iteration {it}. Aborting correction.")
             return p_g_current, 0
 
-        x_v_current += 0.7 * delta_x_v
+        x_v_current += 0.01 * delta_x_v
+        # Print the last 12 values difference (the parameters being corrected)
+        print(delta_x_v[-12:])
+
         p_g_current = x_v_current[-12:]
 
         max_update = np.max(np.abs(delta_x_v))

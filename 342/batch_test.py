@@ -59,7 +59,7 @@ def test_iteration_wrapper(dss, mpc, z_noisy, x_f, busphase_map, Y_pu, covarianc
     ]
     C_str = "[566.228 | 0  566.228 | 0  0  566.228]"
 
-    for line_idx in range(4, 136):
+    for line_idx in range(15, 136):
         dss.Command('Redirect "Master.DSS"')
         for sub_iter in range(10):
             choice = random.choice(["R", "X"])

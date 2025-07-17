@@ -52,13 +52,17 @@ def main():
     # dss.Text.Command("Edit line.307_6 Linecode=NLM")
     # dss.Solution.Solve()
 
+
+    # dss.Text.Command("~ Rmatrix = [0.13018  |-4.14314E-006  0.130177  |-8.11898E-006  -4.14314E-006  0.13018]")
+    # dss.Text.Command("~ Xmatrix = [0.0668195  |-0.000224891  2.8703539  |-4.2835E-005  -0.000224891  6.13821694]")
+    # dss.Text.Command("~ Cmatrix = [566.228 | 0  566.228 | 0  0  566.228]")
     # For primary network
     dss.Command('Redirect "Master.DSS"')
     dss.Text.Command("New LineCode.NLM nphases=3 units=mi")
     dss.Text.Command("~ Rmatrix = [0.13018  |-4.14314E-006  0.130177  |-8.11898E-006  -4.14314E-006  0.13018]")
-    dss.Text.Command("~ Xmatrix = [0.0668195  |-0.000224891  2.8703539  |-4.2835E-005  -0.000224891  6.13821694]")
+    dss.Text.Command("~ Xmatrix = [0.0668195  |-0.224891  0.066985  |-4.2835E-005  -0.224891  0.0668195]")
     dss.Text.Command("~ Cmatrix = [566.228 | 0  566.228 | 0  0  566.228]")
-    dss.Text.Command("Edit line.14 Linecode=NLM")
+    dss.Text.Command("Edit line.28 Linecode=NLM")
     dss.Solution.Solve()
 
     ### Rebuild the Y Matrix *!
