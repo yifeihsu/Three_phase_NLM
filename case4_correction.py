@@ -9,16 +9,16 @@ from lagrangian_m import run_lagrangian_polar
 
 def main():
     # 1) Load the base data from OpenDSS
-    dss_filename = "Master.DSS"
-    lc_filename = "LineConstantsCode.txt"
+    dss_filename = "4Bus-YY-Bal.DSS"
+    lc_filename = "LineConstantsCode4.txt"
     baseMVA = 1.0
-    slack_bus = "p1"
+    slack_bus = "sourcebus"
 
     mpc_correct = parse_opendss_to_mpc(dss_filename, baseMVA=baseMVA, slack_bus=slack_bus, lc_filename=lc_filename)
     merge_closed_switches_in_mpc_and_dss(mpc_correct, switch_threshold=2)
     Y_pu_correct, _ = build_global_y_per_unit(mpc_correct)
 
-    num_scans = 3
+    num_scans = 10
     multi_scan_measurements_z = []
     initial_states_multi_scan = []
     load_variation_factor = 0.95
@@ -60,33 +60,36 @@ def main():
     print("--- Multi-scan measurement generation complete ---")
 
     print("\n--- Introducing parameter error into the model ---")
-    dss.Command('Redirect "Master.DSS"')
-    dss.Command("New LineCode.NLM nphases=3 units=mi")
-    dss.Command("~ Rmatrix = [0.13018  |-4.14314E-006  0.130177  |-8.11898E-006  -4.14314E-006  0.13018]")
-    dss.Command("~ Xmatrix = [0.0668195  |-0.000224891  2.8703539  |-4.2835E-005  -0.000224891  6.13821694]")
-    dss.Command("~ Cmatrix = [566.228 | 0  566.228 | 0  0  566.228]")
-    dss.Command("Edit line.14 Linecode=NLM")
+    dss.Command('Redirect "4Bus-YY-Bal.DSS"')
+    dss.Command("Edit line.2 Linecode=Kersting")
     dss.Solution.Solve()
 
-    # ### Rebuild the Y Matrix *!
-    # Y_pu, _ = build_global_y_per_unit(mpc_scan)
-    # x_est, success, lambdaN = run_lagrangian_polar(
-    #     z_noisy, x_f_true, busphase_map, Y_pu, covariance_matrix, mpc_scan
-    # )
-    # # 6) find the largest index
-    # largest_idx = np.argmax(np.abs(lambdaN))
-    # largest_val = lambdaN[largest_idx]
-    # error_type = "X" if (largest_idx%12 + 1)//6 == 1 else "R"
-    # print(f"Largest Lagrangian param => index={(largest_idx%12 + 1)%6}, value={largest_val:.4g}, "
-    #       f"line={largest_idx//12 + 1}, error_type={error_type}")
+    ### Rebuild the Y Matrix *!
+    Y_pu, _ = build_global_y_per_unit(mpc_scan)
+    x_est, success, lambdaN = run_lagrangian_polar(
+        z_noisy, x_f_true, busphase_map, Y_pu, covariance_matrix, mpc_scan
+    )
+    # 6) find the largest index
+    largest_idx = np.argmax(np.abs(lambdaN))
+    largest_val = lambdaN[largest_idx]
+    error_type = "X" if (largest_idx%12 + 1)//6 == 1 else "R"
+    print(f"Largest Lagrangian param => index={(largest_idx%12 + 1)%6}, value={largest_val:.4g}, "
+          f"line={largest_idx//12 + 1}, error_type={error_type}")
 
     mpc_with_error = parse_opendss_to_mpc(dss_filename, baseMVA=baseMVA, slack_bus=slack_bus, lc_filename=lc_filename)
     merge_closed_switches_in_mpc_and_dss(mpc_with_error, switch_threshold=2)
 
-    line_name_to_correct = '14'
+    line_name_to_correct = '2'
     line_to_correct_idx = np.where(mpc_with_error["line3p"][:, 6] == line_name_to_correct.lower())[0][0]
 
     print(f"\n--- Starting Group Parameter Correction for line index {line_to_correct_idx} ---")
+
+    linecode_params_str = """
+    New Linecode.Kersting nphases=3  Units=mi
+    ~ Rmatrix=[0.457552  |0.155951  0.466628  |0.153485  0.158007  0.461473  ]
+    ~ Xmatrix=[1.07805  |0.501679  1.04818  |0.384938  0.423653  1.06507  ]
+    ~ Cmatrix=[15.0675  |-4.86254  15.8754  |-1.85328  -3.09107  14.3258  ]
+    """
 
     corrected_params, success = correct_parameter_group_multi_scan(
         dss_filename,
