@@ -1,0 +1,41 @@
+clear
+Set DefaultBaseFrequency=60
+
+new circuit.ieee390 basekv=230 pu=1.05 bus1=P1 mvasc3=200000 mvasc1=200000
+ 
+new LineCode.Switch nphases=3 r1=1e-6 r0=1e-6 x1=1e-6 x0=1e-6 c1=0 c0=0
+ 
+new LineSpacing.101 nconds=3 nphases=3 units=ft x=[0,10,20] h=[50,50,50]
+new LineSpacing.102 nconds=3 nphases=3 units=in x=[0,3,6] h=[-48,-48,-48]
+new LineSpacing.103 nconds=4 nphases=3 units=in x=[-2.1213,0,2.1213,0] h=[50.1213,48,50.1213,52.2426]
+ 
+new WireData.397AA gmr=0.0277 rac=0.0477 diam=0.806 gmrunits=ft radunits=in runits=mi normamps=594
+new CNData.1000AA gmrac=0.04683 rac=0.1214 diam=1.124 gmrunits=ft runits=mi radunits=in normamps=615
+~ diacable=2.08 k=21 gmrstrand=0.00417 rstrand=0.1809 diastrand=0.1285
+~ inslayer=0.25 diains=1.64
+new WireData.UG500Cu gmr=0.026 rac=0.206 diam=0.814 gmrunits=ft radunits=in runits=mi normamps=430
+ 
+new LineGeometry.Trans nconds=3 nphases=3 spacing=101 wires=[397AA 397AA 397AA]
+new LineGeometry.Pri nconds=3 nphases=3 spacing=102 cncables=[1000AA 1000AA 1000AA]
+new LineGeometry.Sec nconds=4 nphases=3 reduce=y spacing=103 wires=[UG500Cu UG500Cu UG500Cu UG500Cu]
+ 
+new Line.1 bus1=P1.1.2.3 bus2=P2.1.2.3 phases=3 length=150 units=ft geometry=Trans
+new Line.2 bus1=P2.1.2.3 bus2=P3.1.2.3 phases=3 length=150 units=ft geometry=Trans
+new Line.3 bus1=P6.1.2.3 bus2=P11.1.2.3 phases=3 length=50 units=ft geometry=Pri
+new Line.4 bus1=P12.1.2.3 bus2=P13.1.2.3 phases=3 length=2500 units=ft geometry=Pri
+new Line.5 bus1=P13.1.2.3 bus2=P14.1.2.3 phases=3 length=100 units=ft geometry=Pri
+new Line.6 bus1=P13.1.2.3 bus2=P15.1.2.3 phases=3 length=100 units=ft geometry=Pri
+
+new Line.1_sw bus1=P3.1.2.3 bus2=P4.1.2.3 phases=3 switch=yes linecode=switch length=1
+  close Line.1_sw 1
+new Line.2_sw bus1=P5.1.2.3 bus2=P6.1.2.3 phases=3 switch=yes linecode=switch length=1
+  close Line.2_sw 1
+new Line.5_sw bus1=P11.1.2.3 bus2=P12.1.2.3 phases=3 switch=yes linecode=switch length=1
+  close Line.5_sw 1
+ 
+new Transformer.1 buses=[P4,P5] kvs=[229.999,13.800] kvas=[50000,50000] conns=[d,d] xhl=7.5 %loadloss=0.75
+
+Set Voltagebases=[230, 13.8]
+calcv
+buscoords buscoords.dat
+solve

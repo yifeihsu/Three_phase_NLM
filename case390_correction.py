@@ -119,7 +119,7 @@ def run_parameter_correction_from_file(dss_filename_with_error, saved_data_filen
     merge_closed_switches_in_mpc_and_dss(mpc_with_error, switch_threshold=2)
 
     # 4) Set up and run the correction algorithm
-    line_name_to_correct = '14'
+    line_name_to_correct = '28'
     line_to_correct_idx = np.where(mpc_with_error["line3p"][:, 6] == line_name_to_correct.lower())[0][0]
     print(f"\n--- Starting Group Parameter Correction for line index {line_to_correct_idx} ---")
 
@@ -142,7 +142,7 @@ def main():
     lc_filename = "LineConstantsCode.txt"
     baseMVA = 1.0
     slack_bus = "p1"
-    num_scans = 20
+    num_scans = 10
 
     # Define a filename for the pre-computed data
     saved_data_filename = "multi_scan_data.npz"

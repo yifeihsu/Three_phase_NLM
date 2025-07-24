@@ -7,17 +7,24 @@ from .make_jacobian import jacobian
 from .make_jacobian_p import jacobian_line_params
 from parse_opendss_file import build_global_y_per_unit
 
-# ---------- constants (unchanged) ----------
 KERSTING_R_PER_MILE = np.array(
-    [0.13018, -4.14314E-006, -8.11898E-006, 0.130177, -4.14314E-006, 0.13018]
+    [0.13018, -4.14314E-006, -8.11898E-006, 0.130177, -4.14314E-006,  0.13018]
 )
 KERSTING_X_PER_MILE = np.array(
-    [0.0668195, -0.000224891, -4.2835E-005, 0.28703539, -0.000224891, 0.613821694]
+    [0.0668195, -0.000224891, -4.2835E-005, 0.066985, -0.000224891, 0.0668195]
 )
-# KERSTING_X_PER_MILE = np.array(
-#     [0.0668195, -0.000224891, -4.2835E-005, 0.066985, -0.000224891, 0.0668195]
-# )
+
 KERSTING_C_STR = "[566.228 | 0  566.228 | 0  0  566.228]"
+
+# KERSTING_R_PER_MILE = np.array(
+#     [0.457552 , 0.155951, 0.153485, 0.466628, 0.158007, 0.461473]
+# )
+#
+# KERSTING_X_PER_MILE = np.array(
+#     [1.07805, 0.501679, 0.384938, 10.4818, 0.423653, 10.6507]
+# )
+
+# KERSTING_C_STR = "[15.0675  |-4.86254  15.8754  |-1.85328  -3.09107  14.3258  ]"
 
 def to_dense_gpu(mat):
     if sp.issparse(mat):
@@ -55,6 +62,19 @@ def correct_parameter_group_multi_scan(
     line_row    = mpc_with_error["line3p"][line_to_correct_idx]
     line_name   = line_row[6]
     miles       = float(line_row[5] / 5280)
+
+    # --- Per-unit line parameters ---
+    line_row = mpc_with_error["line3p"][line_to_correct_idx]
+    fbus_id = line_row[1]
+    line_name = line_row[6]
+
+    # --- Calculate Base Impedance (Z_base) for the line ---
+    S_base = mpc_with_error["baseMVA"] * 1e6
+    bus_mask = mpc_with_error["bus3p"][:, 0] == fbus_id
+    V_base_LL = mpc_with_error["bus3p"][bus_mask, 2][0]
+    V_base_LN = (V_base_LL * 1e3) / np.sqrt(3)
+    Z_base = (V_base_LN ** 2) / S_base
+    print(Z_base)
 
     # --- GPU copies ---
     p_g = cp.hstack([cp.asarray(KERSTING_R_PER_MILE) * miles,
@@ -149,7 +169,7 @@ def correct_parameter_group_multi_scan(
         delta = cp.linalg.solve(G_dense, RHS)         # dense cuSOLVER
         print(x_v[-12:])
         print(delta[-12:])
-        x_v[-12:]   += delta[-12:]                          # damping
+        x_v[-12:]   += 0.4 * delta[-12:]                          # damping
         p_g    = x_v[-12:]
 
         max_upd = float(cp.max(cp.abs(delta)).get())
