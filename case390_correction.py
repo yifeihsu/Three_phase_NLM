@@ -4,8 +4,7 @@ from opendssdirect import dss
 from utilities.mea_fun import measurement_function
 from cal_pf import run_newton_powerflow_3p
 from parse_opendss_file import parse_opendss_to_mpc, build_global_y_per_unit, merge_closed_switches_in_mpc_and_dss
-from utilities.correct_parameter_group_multi_scan import correct_parameter_group_multi_scan
-from utilities.meas_selector import build_meas_mask, build_state_col_mask, _buses_within_hops
+from utilities.correct_parameter_group_multi_scan import correct_parameter_group_multi_scan, correct_parameters_with_known_states
 
 
 def generate_and_save_measurement_data(dss_filename, lc_filename, baseMVA, slack_bus, num_scans, output_filename):
@@ -49,7 +48,7 @@ def generate_and_save_measurement_data(dss_filename, lc_filename, baseMVA, slack
 
         z_true = measurement_function(x_true_polar, Y_pu_correct, mpc_scan, busphase_map)
 
-        std_P, std_Q, std_V = 0.00001, 0.00001, 0.00001
+        std_P, std_Q, std_V = 0.0001, 0.0001, 0.00001
         num_P_inj = num_Q_inj = num_Vmag = len(busphase_map)
 
         # Calculate the number of flow measurements dynamically
@@ -119,11 +118,11 @@ def run_parameter_correction_from_file(dss_filename_with_error, saved_data_filen
     merge_closed_switches_in_mpc_and_dss(mpc_with_error, switch_threshold=2)
 
     # 4) Set up and run the correction algorithm
-    line_name_to_correct = '28'
+    line_name_to_correct = '14'
     line_to_correct_idx = np.where(mpc_with_error["line3p"][:, 6] == line_name_to_correct.lower())[0][0]
     print(f"\n--- Starting Group Parameter Correction for line index {line_to_correct_idx} ---")
 
-    corrected_params, success = correct_parameter_group_multi_scan(
+    corrected_params, success = correct_parameters_with_known_states(
         dss_filename_with_error, mpc_with_error, line_to_correct_idx,
         multi_scan_measurements_z, initial_states_multi_scan,
         R_variances_vec, busphase_map)
@@ -140,9 +139,9 @@ def main():
     # --- Configuration ---
     dss_filename = "Master.DSS"
     lc_filename = "LineConstantsCode.txt"
-    baseMVA = 1.0
+    baseMVA = 100
     slack_bus = "p1"
-    num_scans = 10
+    num_scans = 20
 
     # Define a filename for the pre-computed data
     saved_data_filename = "multi_scan_data.npz"
