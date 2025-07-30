@@ -31,23 +31,23 @@ def add_kw_for_constant_resistance(dss_file: str, r_ohm: float, fault_bus: str):
     open(dss_file, "w").write("\n".join(txt))
 
 def main():
-    # 1)  create a DSS file with a constant‑R HIF
+    # 1) create a DSS file with a constant‑R HIF
     make_midspan_hif_dss(PRISTINE_DSS, FAULT_DSS, TARGET_LINE)
     add_kw_for_constant_resistance(FAULT_DSS, R_HIF, FAULT_BUS)
 
-    # 2)  parse pristine and faulted circuits
+    # 2) parse pristine and faulted circuits
     mpc_orig = parse_opendss_to_mpc(PRISTINE_DSS, baseMVA=1.0, lc_filename="LineConstantsCode4.txt",
                                     slack_bus="sourcebus")
     mpc_fault = parse_opendss_to_mpc(FAULT_DSS, baseMVA=1.0, lc_filename="LineConstantsCode4.txt",
                                      slack_bus="sourcebus")
     merge_closed_switches_in_mpc_and_dss(mpc_fault, SWITCH_THRES)
 
-    # 3)  run PF on augmented network to get "true" faulted voltages
+    # 3) run PF on augmented network to get "true" faulted voltages
     Vr, Vi, bp_full = run_newton_powerflow_3p(mpc_fault, 1e-6, 20)
     Vc_full = Vr + 1j * Vi
     report_results(Vr, Vi, bp_full, mpc_fault)
 
-    # 4)  Build the full Y-Bus for the faulted network
+    # 4) Build the full Y-Bus for the faulted network
     dss.Command("Clear")
     dss.Command(f'Redirect "{FAULT_DSS}"')
     Y_full, node_order_list = build_global_y_per_unit(mpc_fault)

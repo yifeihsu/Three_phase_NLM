@@ -420,13 +420,12 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     print("\nGroup Mahalanobis Distance Test (Line Impedance + Terminal Shunts):")
 
     # We must also update the M-distance function to handle this new mapping.
-    # Pass the per-phase map to a revised function.
     group_distances = compute_group_mahalanobis_distances_per_phase(lambda_vec, ea, mpc, param_map)
 
     if group_distances:
         for i_line, d_val in group_distances:
             fbus, tbus = mpc['line3p'][i_line][1], mpc['line3p'][i_line][2]
-            print(f"  - Group for Line {i_line} ({fbus}-{tbus}): Mahalanobis distance = {d_val:.4f}")
+            print(f"  - Group for Line {i_line+1} ({fbus}-{tbus}): Mahalanobis distance = {d_val:.4f}")
 
         if any(not np.isnan(d[1]) for d in group_distances):
             max_item = max(group_distances, key=lambda item: item[1] if not np.isnan(item[1]) else -np.inf)

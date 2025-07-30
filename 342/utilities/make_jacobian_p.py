@@ -1,13 +1,6 @@
-
 import numpy as np
 from scipy.sparse import csr_matrix
 
-__all__ = ["jacobian_line_params"]
-
-
-# ---------------------------------------------------------------------------
-# helpers shared with the original code base
-# ---------------------------------------------------------------------------
 def build_param_info(mpc):
     """
     Returns an array of shape (n_params, 3):
@@ -74,10 +67,6 @@ def build_dYsub_symbolic(Ysub, param_type):
     dY6[3:, 0:3]  = -dY3
     return dY6
 
-
-# ---------------------------------------------------------------------------
-#  ∂h/∂p for a single parameter (injection rows only)
-# ---------------------------------------------------------------------------
 def _compute_param_injection_partial(
     x, Ybus, mpc, busphase_map, line_id, param_name
 ):
@@ -113,9 +102,6 @@ def _compute_param_injection_partial(
     return dh
 
 
-# ---------------------------------------------------------------------------
-#  public routine
-# ---------------------------------------------------------------------------
 def jacobian_line_params(x, Ybus, mpc, busphase_map):
     """
     Sparse Jacobian of size (3·N, n_params) where n_params = 12·n_lines

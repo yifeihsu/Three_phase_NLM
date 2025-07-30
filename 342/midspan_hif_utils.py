@@ -6,11 +6,11 @@ from scipy.sparse import csc_matrix
 def make_midspan_hif_dss(
         pristine_path : str,
         new_path      : str,
-        line_name     : str = "line.2",
+        line_name     : str,
         split_ratio   : float = 0.5,
         fault_bus     : str = "FaultBus",
         hif_load_name : str = "Load.HIF_Load",
-        encoding      : str = "utf-8"        # change if you want cp1252, …
+        encoding      : str = "utf-8"
     ) -> None:
     """
     Creates *new_path* by copying *pristine_path* and injecting a block that
@@ -58,9 +58,9 @@ def make_midspan_hif_dss(
     base = f"length={{}} units={units} "
     if geom:  base += f"geometry={geom} "
     if lcode: base += f"linecode={lcode} "
-    block.append(f"New {line_name}_a bus1={bus1} bus2={fault_bus} " +
+    block.append(f"New {line_name}_a bus1={bus1} bus2={fault_bus}.1.2.3 " +
                  base.format(f'{len_a:.4f}'))
-    block.append(f"New {line_name}_b bus1={fault_bus} bus2={bus2} " +
+    block.append(f"New {line_name}_b bus1={fault_bus}.1.2.3 bus2={bus2} " +
                  base.format(f'{len_b:.4f}'))
     block.append(f"New {hif_load_name} Bus1={fault_bus}.1 Phases=1 "
                  "Conn=Wye Model=1 kW=0 kvar=0")
