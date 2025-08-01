@@ -96,21 +96,26 @@ def find_zero_injection_nodes(mpc, busphase_map, tol=1.0):
     return zero_inj_nodes
 
 
-def compute_group_mahalanobis_distances_per_phase(
-        lambda_vec,  # Un-normalized Lagrange multipliers
-        EA,  # Full covariance matrix of lambda_vec
-        mpc,  # MPC case file
-        param_map,  # The NEW per-phase parameter map
-        epsilon_reg=1e-8):
+def compute_terminal_shunt_mahalanobis_distances(lambda_vec, EA, mpc, param_map, epsilon_reg=1e-8):
     """
-    Computes group Mahalanobis distance where a group is a line's series impedance
-    PLUS the PER-PHASE shunt admittances of its two terminal buses.
-    """
-    if 'line' not in param_map or 'shunt' not in param_map:
-        return []
+    Computes group Mahalanobis distance for shunts at the terminals of each line.
+    A group consists of all shunt admittance parameters (3 phases * 2 params/phase)
+    for the two buses connected by a line.
 
-    line_param_info = param_map['line']
-    shunt_param_info = param_map['shunt']  # keys are (bus_id, phase_idx)
+    Args:
+        lambda_vec (np.ndarray): Un-normalized Lagrange multipliers for shunts.
+        EA (np.ndarray): Covariance matrix corresponding to lambda_vec.
+        mpc (dict): The MATPOWER case file.
+        param_map (dict): Maps shunt parameters, with (bus_id, phase_idx) as keys.
+        epsilon_reg (float): Regularization value for Cholesky decomposition.
+
+    Returns:
+        list: A list of tuples (line_index, distance_value).
+    """
+    shunt_param_info = param_map.get('shunt')
+    if not shunt_param_info:
+        print("Warning: Shunt parameter map is missing.")
+        return []
 
     distances = []
     for i_line, line_data in enumerate(mpc["line3p"]):
@@ -118,51 +123,48 @@ def compute_group_mahalanobis_distances_per_phase(
         to_bus = int(line_data[2])
 
         group_indices = []
-
-        # a) Add indices for the line's series impedance (12 params)
-        line_start_idx, line_num_params = line_param_info[i_line]
-        group_indices.extend(range(line_start_idx, line_start_idx + line_num_params))
-
-        # b) Add indices for all 3 phases of the 'from' bus shunt (3 * 2 = 6 params)
-        for phase_idx in range(3):
-            key = (from_bus, phase_idx)
-            if key in shunt_param_info:
-                shunt_start_idx, shunt_num_params = shunt_param_info[key]
-                group_indices.extend(range(shunt_start_idx, shunt_start_idx + shunt_num_params))
-
-        # c) Add indices for all 3 phases of the 'to' bus shunt (3 * 2 = 6 params)
-        for phase_idx in range(3):
-            key = (to_bus, phase_idx)
-            if key in shunt_param_info:
-                shunt_start_idx, shunt_num_params = shunt_param_info[key]
-                group_indices.extend(range(shunt_start_idx, shunt_start_idx + shunt_num_params))
+        # Gather indices for all 3 phases of the 'from' bus and 'to' bus shunts
+        for bus_id in [from_bus, to_bus]:
+            for phase_idx in range(3):
+                key = (bus_id, phase_idx)
+                if key in shunt_param_info:
+                    start_idx, num_params = shunt_param_info[key]
+                    group_indices.extend(range(start_idx, start_idx + num_params))
 
         group_indices = sorted(list(set(group_indices)))
 
-        # A full group should have 12 (line) + 6 (from_bus) + 6 (to_bus) = 24 parameters
-        if len(group_indices) != 24:
-            print(f"Warning: Group for line {i_line} has {len(group_indices)} params instead of the expected 24.")
+        # A full group should have 6 (from_bus) + 6 (to_bus) = 12 parameters
+        if not group_indices:
+            continue
 
-        # ... The rest of the calculation is identical ...
+        # Extract the subset of multipliers and the covariance sub-matrix
         lam_sub = lambda_vec[group_indices]
         EA_sub = EA[np.ix_(group_indices, group_indices)]
 
         dist_line = np.nan
         try:
+            # Use Cholesky decomposition for numerical stability
             try:
                 L = np.linalg.cholesky(EA_sub)
             except np.linalg.LinAlgError:
+                # Apply regularization if the matrix is not positive definite
                 EA_sub_reg = EA_sub + np.eye(EA_sub.shape[0]) * epsilon_reg
                 L = np.linalg.cholesky(EA_sub_reg)
+
+            # The index is lambda^T * Sigma^-1 * lambda - k
+            # This is computed as ||L^-1 * lambda||_2^2 - k
             y = np.linalg.solve(L, lam_sub)
-            dist_line = np.linalg.norm(y)
+            quadratic_form_value = np.dot(y, y)
+            k = len(lam_sub)
+            dist_line = quadratic_form_value - k
+
         except np.linalg.LinAlgError:
-            print(f"ERROR: Cholesky decomposition failed for group of line {i_line}. Dist set to inf.")
+            print(f"ERROR: Cholesky decomposition failed for terminal shunts of line {i_line}. Dist set to inf.")
             dist_line = np.inf
 
         distances.append((i_line, dist_line))
-
     return distances
+
 # def compute_line_mahalanobis_distances(lambdaN, EA, mpc, epsilon_reg=1e-10):
 #     """
 #     Compute the group Mahalanobis distance for each line's parameters.
@@ -230,12 +232,6 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     """
     DSSE solver that also assesses both line impedance and shunt admittance parameters.
     """
-    # ... (The first part of the function for state estimation remains exactly the same) ...
-    # ... (Assume the DSSE converges and we have the final x_current and dxl) ...
-
-    ########################################################
-    # Data Preparation
-    ########################################################
     nbus = len(mpc["bus3p"])
     nnodephase = len(busphase_map)
     nstate = 2 * nnodephase
@@ -310,45 +306,26 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     if not success:
         return x_current, False, None
 
-    # --- 1. Form a COMBINED Parameter Jacobian (Hp) ---
-    print("\nForming combined Jacobian for Line Impedances and Shunt Admittances...")
-    Hp_line = jacobian_line_params(x_current, Ybus, mpc, busphase_map)
-    Hp_shunt = jacobian_shunt_params(x_current, mpc, busphase_map)
+    # --- 1. Form the Parameter Jacobian (Hp) for SHUNTS ONLY ---
+    print("\nForming Jacobian for Shunt Admittances ONLY...")
+    Hp = jacobian_shunt_params(x_current, mpc, busphase_map)
+    print(f"Shunt Jacobian Hp formed – shape {Hp.shape}")
 
-    Hp = sps.hstack([Hp_line, Hp_shunt], format='csc')
-    print(f"Combined Jacobian Hp formed – shape {Hp.shape}")
-    num_line_params = Hp_line.shape[1]
-
-    # --- 2. Create a Robust Parameter Map (NEW PER-PHASE SHUNT LOGIC) ---
-    param_map = {'line': {}, 'shunt': {}}
-
-    # a) Map for line parameters (12 per line)
-    n_lines = len(mpc['line3p'])
-    for i in range(n_lines):
-        param_map['line'][i] = (i * 12, 12)
-
-    # b) Map for shunt parameters, assuming a PER-PHASE model
-    #    The jacobian creates columns for Bus1-PhA, Bus1-PhB, Bus1-PhC, Bus2-PhA, ...
+    # --- 2. Create a Parameter Map for SHUNTS ONLY ---
+    param_map = {'shunt': {}}
     shunt_bus_phase_ordered = []
     for bus_row in mpc['bus3p']:
         bus_id = int(bus_row[0])
-        for phase_idx in range(3):  # 0:A, 1:B, 2:C
+        for phase_idx in range(3):
             shunt_bus_phase_ordered.append((bus_id, phase_idx))
 
-    # Check if the number of columns in Hp_shunt matches our new assumption
-    expected_shunt_params = len(shunt_bus_phase_ordered) * 2  # 12 nodes * 2 params/node = 24
-    if Hp_shunt.shape[1] != expected_shunt_params:
-        print(
-            f"CRITICAL WARNING: Shunt Jacobian size ({Hp_shunt.shape[1]}) does not match per-phase model assumption ({expected_shunt_params}). The following analysis may be incorrect.")
-
-    # The map key is now a tuple (bus_id, phase_idx)
+    # The map key is (bus_id, phase_idx), value is (start_index, num_params)
     for i, (bus_id, phase_idx) in enumerate(shunt_bus_phase_ordered):
-        # The start index for shunts is after all line parameters
-        start_idx = num_line_params + (i * 2)
+        # Indexing starts at 0 since there are no preceding line parameters
+        start_idx = i * 2
         param_map['shunt'][(bus_id, phase_idx)] = (start_idx, 2)
 
     # --- 3. Proceed with GPU-accelerated calculation for lambda and EA ---
-    # ... (This entire section is unchanged as it's general) ...
     cp.cuda.set_allocator(cp.cuda.MemoryPool(cp.cuda.malloc_managed).malloc)
     dtype = cp.float64
 
@@ -388,50 +365,40 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
 
     lambda_vec, lambdaN, ea = cp.asnumpy(lambda_vec_gpu), cp.asnumpy(lambdaN_gpu), cp.asnumpy(ea_gpu_full)
 
-    # --- 4. Assess the Multipliers and Group Distances (NEW PER-PHASE LOGIC) ---
-    print("\n--- Combined Parameter Assessment Results ---")
+    # --- 4. Assess the Multipliers and Group Distances for SHUNTS ---
+    print("\n--- Shunt Parameter Assessment Results ---")
 
-    # a) Individual Parameter Test
-    max_lambdaN_val = np.max(np.abs(lambdaN))
+    # a) Individual Shunt Parameter Test
     max_lambdaN_idx = np.argmax(np.abs(lambdaN))
-    print(f"Normalized Multiplier Test (All Individual Parameters):")
-    print(f"  - Max absolute normalized multiplier (lambda_N): {max_lambdaN_val:.4f}")
+    max_lambdaN_val = np.abs(lambdaN[max_lambdaN_idx])
+    print(f"Normalized Multiplier Test (Individual Shunt Parameters):")
+    print(f"  - Max absolute normalized multiplier (λ_N): {max_lambdaN_val:.4f}")
 
-    # Interpret the index using the per-phase mapping
-    if max_lambdaN_idx < num_line_params:
-        line_idx = max_lambdaN_idx // 12
-        param_type = "Line Impedance"
-        print(f"  - This corresponds to a {param_type} parameter in Line Index {line_idx}.")
+    bus_phase_idx = max_lambdaN_idx // 2
+    if bus_phase_idx < len(shunt_bus_phase_ordered):
+        bus_id, phase_idx = shunt_bus_phase_ordered[bus_phase_idx]
+        phase_str = {0: 'A', 1: 'B', 2: 'C'}.get(phase_idx, '?')
+        param_type = "Conductance (G)" if (max_lambdaN_idx % 2) == 0 else "Susceptance (B)"
+        print(f"  - Corresponds to {param_type} at Bus ID {bus_id}, Phase {phase_str}.")
     else:
-        # CORRECTED LOGIC FOR PER-PHASE SHUNTS
-        shunt_idx_local = max_lambdaN_idx - num_line_params
-        # bus_phase_idx is the index into our ordered list of (bus, phase) tuples
-        bus_phase_idx = shunt_idx_local // 2
-        param_type = "Shunt Admittance"
+        print(f"  - Error: Corresponds to an invalid shunt parameter index ({max_lambdaN_idx}).")
 
-        if bus_phase_idx < len(shunt_bus_phase_ordered):
-            bus_id, phase_idx = shunt_bus_phase_ordered[bus_phase_idx]
-            phase_str = {0: 'A', 1: 'B', 2: 'C'}.get(phase_idx, '?')
-            print(f"  - This corresponds to a {param_type} parameter at Bus ID {bus_id}, Phase {phase_str}.")
-        else:
-            print(f"  - Error: Corresponds to an invalid shunt parameter index ({max_lambdaN_idx}).")
-
-    # b) Group Parameter Test (Mahalanobis Distance for Line + Terminal Shunts)
-    print("\nGroup Mahalanobis Distance Test (Line Impedance + Terminal Shunts):")
-
-    # We must also update the M-distance function to handle this new mapping.
-    group_distances = compute_group_mahalanobis_distances_per_phase(lambda_vec, ea, mpc, param_map)
+    # b) Group Test: Mahalanobis Distance for Terminal Shunts of each Line
+    print("\nGroup Mahalanobis Distance Test (Shunts at Line Terminals):")
+    group_distances = compute_terminal_shunt_mahalanobis_distances(lambda_vec, ea, mpc, param_map)
 
     if group_distances:
-        for i_line, d_val in group_distances:
-            fbus, tbus = mpc['line3p'][i_line][1], mpc['line3p'][i_line][2]
-            print(f"  - Group for Line {i_line+1} ({fbus}-{tbus}): Mahalanobis distance = {d_val:.4f}")
+        sorted_distances = sorted(group_distances, key=lambda item: item[1], reverse=True)
+        max_line_idx, max_dist = sorted_distances[0]
+        fbus, tbus = mpc['line3p'][max_line_idx][1], mpc['line3p'][max_line_idx][2]
 
-        if any(not np.isnan(d[1]) for d in group_distances):
-            max_item = max(group_distances, key=lambda item: item[1] if not np.isnan(item[1]) else -np.inf)
-            max_line_idx, max_dist = max_item
-            print(
-                f"\nConclusion: The component group for Line Index {max_line_idx} has the largest error score ({max_dist:.4f}) and is the most likely source of parameter error.")
+        print(f"Top 5 most likely erroneous line-terminal groups:")
+        for i_line, d_val in sorted_distances[:5]:
+            f, t = mpc['line3p'][i_line][1], mpc['line3p'][i_line][2]
+            print(f"  - Shunts at terminals of Line {i_line+1} ({f}-{t}): Mahalanobis distance = {d_val:.4f}")
+
+        print(
+            f"\nConclusion: The shunt admittances at the terminals of Line {max_line_idx+1} ({fbus}-{tbus}) have the largest group error score ({max_dist:.4f}).")
     else:
         print("Could not compute group Mahalanobis distances.")
 

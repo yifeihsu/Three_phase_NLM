@@ -2046,7 +2046,7 @@ new Transformer.70 buses=[P84,S190] kvs=[13.800,0.208] kvas=[1000,1000] conns=[d
 Edit Line.280 enabled=no
 New Line.280_a bus1=S121.1.2.3 bus2=FaultBus.1.2.3 length=8.3350 units=ft geometry=Sec 
 New Line.280_b bus1=FaultBus.1.2.3 bus2=S134.1.2.3 length=8.3350 units=ft geometry=Sec 
-New Load.HIF_Load Bus1=FaultBus.1 Phases=1 Conn=Wye Model=2 kW=28.8 kvar=0 kV=0.12
+New Load.HIF_Load Bus1=FaultBus.1 Phases=1 Conn=Wye Model=2 kW=14.4 kvar=0 kV=0.12
 ! -----------------------------------------------------------
 
 Set Voltagebases=[230, 13.8, 0.48, 0.208]

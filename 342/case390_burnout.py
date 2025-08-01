@@ -154,7 +154,5 @@ def main():
     #     print(f"Error: Cannot find line with MPC index {line_index_in_mpc}.")
     #     return
 
-
-
 if __name__ == "__main__":
     main()

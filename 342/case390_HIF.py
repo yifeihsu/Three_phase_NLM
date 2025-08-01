@@ -16,7 +16,7 @@ PRISTINE_DSS = "Master.DSS"
 FAULT_DSS = "Master_HIF.dss"
 TARGET_LINE = "Line.280"  # split this one
 FAULT_BUS = "FaultBus"
-R_HIF = 0.5  # ohms line‑to‑neutral (≈ 0.5A @2.4kV)
+R_HIF = 1  # ohms line‑to‑neutral (≈ 0.5A @2.4kV)
 SWITCH_THRES = 2  # Ω threshold to merge DSS switches
 STD_P, STD_Q, STD_V = 1e-4, 1e-4, 1e-5
 
@@ -97,22 +97,6 @@ def main():
     if not converged:
         print("State estimator did not converge.")
         return
-
-    # # 7) Report the largest NLM (Normalized Lagrangian Multiplier)
-    # idx = int(np.argmax(np.abs(lambdaN)))
-    # node_to_busphase = {v: k for k, v in bp_red.items()}
-    # node_idx = idx // 2
-    # param_type = "Conductance (G)" if (idx % 2) == 0 else "Susceptance (B)"
-    # bus_id, phase_idx = node_to_busphase[node_idx]
-    # phase_char = chr(ord('A') + phase_idx)
-    #
-    # print("\n" + "=" * 50)
-    # print("--- Lagrangian Test Results ---")
-    # print("=" * 50)
-    # print(f"Largest multiplier: |λ| = {abs(lambdaN[idx]):.3g} "
-    #       f"at Bus {bus_id}, Phase {phase_char}, for parameter: {param_type}")
-    # print("=" * 50)
-
 
 if __name__ == "__main__":
     main()
