@@ -764,4 +764,4 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     # else:
     #     print(f"No bad data detected: max normalized residual = {max_norm:.2f} below threshold {bad_data_threshold}")
 
-    return x_current, success, lambdaN
+    return x_current, success, lambdaN, line_distances
