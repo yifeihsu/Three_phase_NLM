@@ -8,7 +8,7 @@ import cupy as cp
 
 import cupyx.scipy.sparse as cpsparse
 import cupyx.scipy.sparse.linalg as cpsparse_linalg
-import scipy.sparse as sp # Assuming Gain originates as a SciPy sparse matrix
+import scipy.sparse as sp
 
 
 def find_zero_injection_nodes(mpc, busphase_map, tol=1.0):
@@ -95,7 +95,7 @@ def find_zero_injection_nodes(mpc, busphase_map, tol=1.0):
     return zero_inj_nodes
 
 
-def compute_line_mahalanobis_distances(lambdaN, EA, mpc, epsilon_reg=1e-10):
+def compute_line_mahalanobis_distances(lambdaN, EA, mpc, epsilon_reg=1):
     """
     Compute the group Mahalanobis distance for each line's parameters.
 
@@ -173,9 +173,6 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
       x_est : final estimated state in polar => [V_m(0..N-1), Va(0..N-1)]
       success : boolean
     """
-    ########################################################
-    # Data Preparation
-    ########################################################
     def check_PSD(covLa):
         """
         Check if the matrix is positive semi-definite (PSD).
@@ -248,10 +245,7 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     # Find the zero injection buses
     zi_nodes = find_zero_injection_nodes(mpc, busphase_map, tol=1.0)
     indices_to_remove = []
-
-
     #### We assume the normal equations without constraints
-
     zi_nodes = []
 
     for i_node in zi_nodes:
@@ -345,12 +339,6 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
         # 4) Form residual vector r = [zeros_for_lagrange; (z - h); -cval]
         r_meas = z - hval
         r = np.concatenate(( np.zeros(2*nnodephase - 3), r_meas, -cval ))
-
-        # ---------------------------------------------------------------------
-        #   SPARSE CHANGES HERE
-        # ---------------------------------------------------------------------
-        # Convert Hmat, C into sparse. "csr_matrix" is usually a good default.
-
         # We'll need an identity matrix matching Hmat's row count:
         nH = H_sp.shape[0]
         I_H_sp = sps.eye(nH, format='csc')
@@ -370,8 +358,6 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
         #      [  0          H'W         C'
         #        H           I          0
         #        C           0          0  ]
-        #
-        # Use "scipy.sparse.bmat" for block assembly:
         Gain = sps.bmat([
             [ zero_block_sp, H_W_sp,     C_sp.transpose() ],
             [ H_sp,          I_H_sp,     None             ],
@@ -380,11 +366,8 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
 
         # 5) Solve the linear system "Gain * dxl = r" via a sparse solver:
         try:
-            print("Start solving the linear system")
             dxl = spsolve(Gain, r)  # dxl is 1D numpy array
-            print("Linear system solved")
         except sps.linalg.MatrixRankWarning:
-            # or sps.linalg.ArpackNoConvergence, or catch linalg.LinAlgError, etc.
             success = False
             print("Sparse solver encountered a rank or convergence issue.")
             break
@@ -410,152 +393,10 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
         success = False
         print("DSSE polar did not converge in max_iter steps.")
 
-    # print_estimation_results(x_current, mpc)
-
-    # Lagrangian multiplier calculation
-    # V, theta: the mag and angle for all nodes
-    # print("Forming Parameters Jacobian")
-    # # --- Form Hp as before ---
-    # Hp = jacobian_line_params(x_current, Ybus, mpc, busphase_map)
-    # print("Jacobian Formed")
-    # # print the shape of Hp
-    # print("Shape of Hp:", Hp.shape)
-    #
-    # if not sps.isspmatrix_csc(Hp):
-    #     Hp = Hp.tocsc()
-    # if not sps.isspmatrix_csc(W_sp):
-    #     W_sp = W_sp.tocsc()
-    # if not sps.isspmatrix_csc(Gain):
-    #     Gain = Gain.tocsc()
-    #
-    # # Extract Cp and (reduced) Hp efficiently
-    # all_rows_hp = np.arange(Hp.shape[0])
-    # keep_rows_hp = np.delete(all_rows_hp, indices_to_remove)
-    # Cp = Hp[indices_to_remove, :]
-    # Hp = Hp[keep_rows_hp, :]
-    #
-    # # Compute WHp = W_sp * Hp
-    # WHp = W_sp.dot(Hp)
-    #
-    # # Stack and transpose in CSC format to form S_sp
-    # S_sp = sps.vstack([WHp, Cp], format='csc')
-    # S_sp = -S_sp.transpose(copy=True)
-    #
-    # # ----------------------------------------------------------------
-    # #       REPLACE FULL INVERSE WITH SPARSE FACTOR + PARTIAL SOLVES
-    # # ----------------------------------------------------------------
-    #
-    # print("Factorizing Gain for partial solves...")
-    # Gain_factor = splu(Gain)  # Instead of sps.linalg.inv(Gain)
-    #
-    # # Suppose you need to form E5, E8 = selected rows/cols of Gain_inv
-    # # Example: "a, b, c" are block sizes. Adjust as appropriate.
-    # a, b, c = zero_block_sp.shape[0], I_H_sp.shape[0], C_sp.shape[0]
-    #
-    # row_E5 = np.arange(a, a + b)
-    # col_E5 = row_E5
-    #
-    # row_E8 = np.arange(a + b, a + b + c)
-    # col_E8 = col_E5  # same columns as E5 in this scenario
-    #
-    # # Build E5 columns by solving Gain * x = e_j for each column j in col_E5
-    # E5_cols = []
-    # for j in col_E5:
-    #     e_j = np.zeros(Gain.shape[0])
-    #     e_j[j] = 1.0
-    #     x = Gain_factor.solve(e_j)
-    #     E5_cols.append(x[row_E5])
-    #
-    # # Stack columns into a 2D array, then convert to sparse if desired
-    # E5 = np.column_stack(E5_cols)
-    # E5_sp = sps.csc_matrix(E5)
-    #
-    # # Same procedure for E8
-    # E8_cols = []
-    # for j in col_E8:
-    #     e_j = np.zeros(Gain.shape[0])
-    #     e_j[j] = 1.0
-    #     x = Gain_factor.solve(e_j)
-    #     E8_cols.append(x[row_E8])
-    #
-    # E8 = np.column_stack(E8_cols)
-    # E8_sp = sps.csc_matrix(E8)
-    #
-    # # Stack to form phi_sp
-    # phi_sp = sps.vstack([E5_sp, E8_sp], format='csc')
-    #
-    # # ----------------------------------------------------------------
-    # #               REST OF THE COMPUTATION
-    # # ----------------------------------------------------------------
-    #
-    # # Invert diagonal of W_sp
-    # W_inv_sp = sps.diags(1.0 / W_sp.diagonal(), format='csc')
-    #
-    # # step1_sp = phi_sp * W_inv_sp * phi_sp^T
-    # print("Computing step1_sp")
-    # w_diag = W_inv_sp.diagonal()
-    # phi_scaled = phi_sp.dot(sps.diags(w_diag))
-    # step1_sp = phi_scaled.dot(phi_sp.transpose())
-    # covu_sp = step1_sp  # Keep it sparse as long as possible
-    #
-    #
-    #
-    # def regularization(covL):
-    #     """
-    #     Regularize the covariance matrix covL by adding a small value to its diagonal.
-    #     """
-    #     epsilon = 1e-12  # Small regularization parameter, adjust if needed
-    #
-    #     # Ensure covL is available (Calculate S, R first if needed)
-    #     # R_mat = np.linalg.inv(W) # Assuming W is dense here
-    #     # S_mat = ... calculate S ... (May need G_inv = np.linalg.inv(H_sp.T @ W_sp @ H_sp) etc.)
-    #     # covL = S_mat @ R_mat @ S_mat.T # This calculation might be needed if not already done
-    #     if sps.issparse(covL):
-    #         covL_reg = covL + epsilon * sps.eye(covL.shape[0], format=covL.format)
-    #     else:  # Assuming covL is a NumPy array
-    #         covL_reg = covL + epsilon * np.identity(covL.shape[0])
-    #     return covL_reg
-    # print("Computing diagonal of EA = diag(S_sp * covu_sp * S_sp^T)")
-    # X_sp = S_sp.dot(covu_sp)  # both are sparse => X_sp also sparse (NxN)
-    #
-    # # 2) Elementwise multiply X_sp and S_sp, then sum each row.
-    # #    In SciPy, 'multiply()' is an elementwise product on sparse matrices;
-    # #    'sum(axis=1)' sums each row into a 1x1 result; we then flatten to 1D.
-    # ea_diag = X_sp.multiply(S_sp).sum(axis=1).A1
-    #
-    # # If you truly need the entire matrix EA in dense form, you can do:
-    # ea_sp = S_sp.dot(covu_sp).dot(S_sp.transpose())  # keep as sparse
-    # ea = ea_sp.toarray()                             # convert to dense if absolutely necessary
-    #
-    #
-    # print("EA diagonal computed.")
-    #
-    # # ----------------------------------------------------------------
-    # #               LAMBDA COMPUTATIONS
-    # # ----------------------------------------------------------------
-    #
-    # # Extract lam_part from your dxl array
-    # lam_part = dxl[2 * nnodephase - 3:]
-    #
-    # # Compute lambda_vec = S_sp @ lam_part in sparse form
-    # lambda_vec = S_sp @ lam_part
-    #
-    # # If using just the diagonal of EA:
-    # tt = np.sqrt(ea_diag)  # shape is (len(ea_diag), )
-    # lambdaN = lambda_vec / tt
-
-
-    # ----------------------------------------------------------------
-    #               GPU COMPUTATION
-    # ----------------------------------------------------------------
-
     cp.cuda.set_allocator(cp.cuda.MemoryPool(cp.cuda.malloc_managed).malloc)
     dtype = cp.float64
 
-    print("Forming Parameters Jacobian (Hp)") # CPU Part
     Hp = jacobian_line_params(x_current, Ybus, mpc, busphase_map)
-    print("Jacobian Formed")
-
     Hp_dense = Hp.toarray()  # from sparse to dense on CPU
     all_rows_hp = np.arange(Hp.shape[0])
     keep_rows_hp = (np.delete(all_rows_hp, indices_to_remove)
@@ -582,7 +423,8 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     S_gpu = cp.concatenate([WHp_gpu, Cp_gpu], axis=0)
     S_gpu = -S_gpu.T  # (n_params, n_meas + n_zi)
     # Scale for numerical stability
-    D_inv = 1e-6
+    # D_inv = 1e-6 # For impedance based multipliers
+    D_inv = 1
     S_gpu *= D_inv
 
     if not isinstance(Gain, sp.csc_matrix):
@@ -591,7 +433,6 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     else:
         Gain_csc = Gain
 
-    print(f"Transferring Gain ({Gain_csc.shape}, nnz={Gain_csc.nnz}) matrix to GPU...")
     Gain_gpu = cpsparse.csc_matrix(Gain_csc)
 
     # Perform the sparse LU factorization on the GPU
@@ -605,8 +446,6 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     row_E8_np = np.arange(a + b, a + b + c)
     cols_to_solve_np = col_E5_np  # Unique columns needed for solves
     # 2. Create the multi-RHS matrix on GPU (columns of Identity)
-    print(f"Creating RHS matrix on GPU for {len(cols_to_solve_np)} solves...")
-    # Create a dense zero matrix first
     rhs_gpu = cp.zeros((n_total, len(cols_to_solve_np)), dtype=cp.float64)
     # Place 1.0s using advanced indexing
     gpu_col_indices = cp.arange(len(cols_to_solve_np))
@@ -621,8 +460,8 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     E5_gpu = solutions_gpu[row_E5_gpu_idx, :]  # Shape: (b, len(cols_to_solve_np))
     E8_gpu = solutions_gpu[row_E8_gpu_idx, :]  # Shape: (c, len(cols_to_solve_np))
 
-    print(f"E5_gpu computed: shape={E5_gpu.shape}, dtype={E5_gpu.dtype}")
-    print(f"E8_gpu computed: shape={E8_gpu.shape}, dtype={E8_gpu.dtype}")
+    # print(f"E5_gpu computed: shape={E5_gpu.shape}, dtype={E5_gpu.dtype}")
+    # print(f"E8_gpu computed: shape={E8_gpu.shape}, dtype={E8_gpu.dtype}")
 
     del rhs_gpu
     del solutions_gpu

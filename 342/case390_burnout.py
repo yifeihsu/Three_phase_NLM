@@ -1,12 +1,9 @@
 import numpy as np
-import time
 from opendssdirect import dss
 from lagrangian_m import run_lagrangian_polar
 from utilities.mea_fun import measurement_function
-from utilities.report_results import report_results
 from cal_pf import run_newton_powerflow_3p
 from parse_opendss_file import parse_opendss_to_mpc
-from report_results import report_results
 from parse_opendss_file import build_global_y_per_unit, merge_closed_switches_in_mpc_and_dss
 
 
@@ -34,13 +31,11 @@ def main():
        Kirchhoff's law constraints of the line that was burnt out, thus
        identifying the location of the modeling error.
     """
+    np.random.seed(42)
     dss_filename = "Master.DSS"
     dss_filename_ft = "Master_ft.DSS"
     baseMVA = 1.0
     slack_bus = "p1"
-
-    # lines_to_burn_out = ["208_2", "208_3", "208_4"]
-    lines_to_burn_out = ["208_4"]
 
     # --- 1) SIMULATE REALITY: CABLE BURN-OUT AND POWER FLOW ---
     print("--- Step 1: Simulating the true system with burnt-out cables ---")
@@ -48,15 +43,10 @@ def main():
     # Use opendssdirect to compile the master file and then disable the lines
     dss.Command("clear")
     dss.Command(f'Redirect "{dss_filename_ft}"')
-
-    # print(f"Disabling the following parallel cables: {', '.join(lines_to_burn_out)}")
-    # for line_name_suffix in lines_to_burn_out:
-    #     dss.Command(f"Edit line.{line_name_suffix} enabled=no")
-
     dss.Solution.Solve()
 
     print("Parsing the 'true' (burnt-out) model from OpenDSS...")
-    # NOTE: We assume parse_opendss_to_mpc works on the active dss circuit
+
     mpc_true = parse_opendss_to_mpc(dss_filename_ft, baseMVA=baseMVA, slack_bus=slack_bus)
     merge_closed_switches_in_mpc_and_dss(mpc_true, switch_threshold=2)
 
@@ -75,14 +65,14 @@ def main():
     num_P_inj = num_Q_inj = num_Vmag = num_bus_phases
 
     # standard deviations
-    std_P, std_Q, std_V = 1e-4, 1e-4, 1e-4
+    std_P, std_Q, std_V = 1e-4, 1e-4, 1e-5
 
     diag_R = (
             [std_P ** 2] * num_P_inj +
             [std_Q ** 2] * num_Q_inj +
             [std_V ** 2] * num_Vmag
     )
-    R = np.diag(diag_R)  # <-- renamed
+    R = np.diag(diag_R)
 
     z_noisy = z + np.random.normal(0.0, np.sqrt(diag_R))
     print("...Noisy measurements generated.")
@@ -92,7 +82,7 @@ def main():
 
     # Re-compile the original master file to get the model WITHOUT the burn-out
     # This represents the model the operator believes to be correct.
-    dss.Command("clear")
+    dss.Command("Clear")
     mpc_assumed = parse_opendss_to_mpc(dss_filename, baseMVA=baseMVA, slack_bus=slack_bus)
     merge_closed_switches_in_mpc_and_dss(mpc_assumed, switch_threshold=2)
 
@@ -112,9 +102,9 @@ def main():
     # - z_noisy: Measurements from the "real" (burnt-out) world.
     # - x_f_assumed: An initial state guess from the "assumed" world.
     # - Y_pu_assumed, mpc_assumed: The model of the "assumed" world.
-    x_est, success, lambdaN = run_lagrangian_polar(
+    x_est, success, lambdaN, _ = run_lagrangian_polar(
         z_noisy, x_f_assumed, busphase_map_assumed,
-        Y_pu_assumed, R,  # <-- pass R, not covariance_matrix
+        Y_pu_assumed, R,
         mpc_assumed
     )
 
@@ -153,8 +143,5 @@ def main():
     # except IndexError:
     #     print(f"Error: Cannot find line with MPC index {line_index_in_mpc}.")
     #     return
-
-
-
 if __name__ == "__main__":
     main()

@@ -141,9 +141,7 @@ def run_single_burnout_test(dss_filename, line_to_burn_out, true_base_name, mpc_
 
 
 def main():
-    """
-    Main function to orchestrate the representative cable burnout analysis.
-    """
+    np.random.seed(42)
     dss_filename = "Master.DSS"
     baseMVA = 1.0
     slack_bus = "p1"

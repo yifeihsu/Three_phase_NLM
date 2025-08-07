@@ -155,7 +155,7 @@ new Line.133 bus1=P147.1.2.3 bus2=P148.1.2.3 phases=3 length=100 units=ft geomet
 new Line.134 bus1=P147.1.2.3 bus2=P149.1.2.3 phases=3 length=100 units=ft geometry=Pri
 new Line.135 bus1=P149.1.2.3 bus2=P150.1.2.3 phases=3 length=100 units=ft geometry=Pri
 new Line.136 bus1=S194.1.2.3 bus2=S193.1.2.3 phases=3 length=10 units=ft geometry=Sec
-  new Line.136_2 bus1=S194.1.2.3 bus2=S193.1.2.3 phases=3 length=10 units=ft geometry=Sec
+!  new Line.136_2 bus1=S194.1.2.3 bus2=S193.1.2.3 phases=3 length=10 units=ft geometry=Sec
   new Line.136_3 bus1=S194.1.2.3 bus2=S193.1.2.3 phases=3 length=10 units=ft geometry=Sec
   new Line.136_4 bus1=S194.1.2.3 bus2=S193.1.2.3 phases=3 length=10 units=ft geometry=Sec
   new Line.136_5 bus1=S194.1.2.3 bus2=S193.1.2.3 phases=3 length=10 units=ft geometry=Sec
@@ -1173,7 +1173,7 @@ new Line.308 bus1=S113.1.2.3 bus2=S118.1.2.3 phases=3 length=25 units=ft geometr
   new Line.308_5 bus1=S113.1.2.3 bus2=S118.1.2.3 phases=3 length=25 units=ft geometry=Sec
   new Line.308_6 bus1=S113.1.2.3 bus2=S118.1.2.3 phases=3 length=25 units=ft geometry=Sec
 new Line.309 bus1=S118.1.2.3 bus2=S123.1.2.3 phases=3 length=100 units=ft geometry=Sec
-!  new Line.309_2 bus1=S118.1.2.3 bus2=S123.1.2.3 phases=3 length=100 units=ft geometry=Sec
+  new Line.309_2 bus1=S118.1.2.3 bus2=S123.1.2.3 phases=3 length=100 units=ft geometry=Sec
   new Line.309_3 bus1=S118.1.2.3 bus2=S123.1.2.3 phases=3 length=100 units=ft geometry=Sec
   new Line.309_4 bus1=S118.1.2.3 bus2=S123.1.2.3 phases=3 length=100 units=ft geometry=Sec
   new Line.309_5 bus1=S118.1.2.3 bus2=S123.1.2.3 phases=3 length=100 units=ft geometry=Sec
