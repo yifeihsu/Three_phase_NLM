@@ -304,7 +304,7 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
         success = False
         print("DSSE polar did not converge.")
     if not success:
-        return x_current, False, None
+        return x_current, False, None, []
 
     # --- 1. Form the Parameter Jacobian (Hp) for SHUNTS ONLY ---
     print("\nForming Jacobian for Shunt Admittances ONLY...")
@@ -387,6 +387,7 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     print("\nGroup Mahalanobis Distance Test (Shunts at Line Terminals):")
     group_distances = compute_terminal_shunt_mahalanobis_distances(lambda_vec, ea, mpc, param_map)
 
+    sorted_distances = []
     if group_distances:
         sorted_distances = sorted(group_distances, key=lambda item: item[1], reverse=True)
         max_line_idx, max_dist = sorted_distances[0]
@@ -402,4 +403,5 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     else:
         print("Could not compute group Mahalanobis distances.")
 
-    return x_current, success, lambdaN
+    # Return x, success flag, per-param normalized multipliers, AND the sorted group distances
+    return x_current, success, lambdaN, sorted_distances

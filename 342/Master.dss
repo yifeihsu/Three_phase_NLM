@@ -1,4 +1,4 @@
-                   clear
+clear
 Set DefaultBaseFrequency=60
 
 new circuit.ieee390 basekv=230 pu=1.05 bus1=P1 mvasc3=200000 mvasc1=200000
@@ -998,12 +998,12 @@ new Line.279 bus1=S116.1.2.3 bus2=S121.1.2.3 phases=3 length=25 units=ft geometr
   new Line.279_4 bus1=S116.1.2.3 bus2=S121.1.2.3 phases=3 length=25 units=ft geometry=Sec
   new Line.279_5 bus1=S116.1.2.3 bus2=S121.1.2.3 phases=3 length=25 units=ft geometry=Sec
   new Line.279_6 bus1=S116.1.2.3 bus2=S121.1.2.3 phases=3 length=25 units=ft geometry=Sec
-new Line.280 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=16.67 units=ft geometry=Sec
-!  new Line.280_2 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
-!  new Line.280_3 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
-!  new Line.280_4 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
-!  new Line.280_5 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
-!  new Line.280_6 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
+new Line.280 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
+  new Line.280_2 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
+  new Line.280_3 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
+  new Line.280_4 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
+  new Line.280_5 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
+  new Line.280_6 bus1=S121.1.2.3 bus2=S134.1.2.3 phases=3 length=100 units=ft geometry=Sec
 new Line.281 bus1=S16.1.2.3 bus2=S25.1.2.3 phases=3 length=100 units=ft geometry=Sec
   new Line.281_2 bus1=S16.1.2.3 bus2=S25.1.2.3 phases=3 length=100 units=ft geometry=Sec
   new Line.281_3 bus1=S16.1.2.3 bus2=S25.1.2.3 phases=3 length=100 units=ft geometry=Sec

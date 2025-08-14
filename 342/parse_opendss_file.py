@@ -421,49 +421,95 @@ def parse_opendss_to_mpc(dss_filename, baseMVA=1.0, lc_filename="LineConstantsCo
     mpc["node_order"] = [nm.lower() for nm in all_nodes]
 
     return mpc
+def _len_to_feet(raw_len, units_code):
+    # OpenDSS units: 1=mi, 2=kft, 3=km, 4=m, 5=ft, 6=in, 7=cm
+    if units_code == 1:   # miles
+        return raw_len * 5280.0
+    elif units_code == 2: # kft
+        return raw_len * 1000.0
+    elif units_code == 3: # km
+        return raw_len * 3280.839895
+    elif units_code == 4: # m
+        return raw_len * 3.280839895
+    elif units_code == 5: # ft
+        return raw_len
+    elif units_code == 6: # in
+        return raw_len / 12.0
+    elif units_code == 7: # cm
+        return raw_len / 30.48
+    else:
+        return raw_len  # assume feet if unknown
 
-def merge_closed_switches_in_mpc_and_dss(mpc, switch_threshold=1e-5):
+def merge_closed_switches_in_mpc_and_dss(mpc, switch_len_ft=0.5, z_pu_threshold=None):
     """
-    Merges topologically redundant nodes in 'mpc' that are connected by
-    near-zero-impedance lines, and also disables those lines in the OpenDSS
-    environment so that we don't see them in YPrim stamping.
-
-    Then it reassigns bus IDs in bus3p from 1..N. Also updates mpc["busname_to_id"]
-    so the old bus names map to the final bus IDs.
-
-    This ensures the final bus set & line set in 'mpc' is consistent with
-    the updated DSS circuit from which we'll build Y.
+    **Important changes**
+    - Identify switches via OpenDSS (Lines.IsSwitch()).
+    - Only use length as a *fallback*, in feet.
+    - Optionally, use a per-unit impedance threshold (z_pu_threshold).
     """
-    line_arr = mpc["line3p"]  # shape [N,7], columns: [line_id, fbus, tbus, status, lcid, length, line_name]
+    line_arr = mpc["line3p"]
     if line_arr.shape[1] < 7:
         raise ValueError("mpc['line3p'] must have 7 columns: [line_id,fbus,tbus,status,lcid,length,line_name].")
 
     bus3p = mpc["bus3p"]
     bus_ids = bus3p[:, 0].astype(int).tolist()
 
-    parent = {}
-
+    parent = {b: b for b in bus_ids}
     def find(x):
         if parent[x] != x:
             parent[x] = find(parent[x])
         return parent[x]
-
-    def union(a, b):
+    def union(a,b):
         ra, rb = find(a), find(b)
         if ra != rb:
             parent[rb] = ra
 
-    for b in bus_ids:
-        parent[b] = b
-
     import opendssdirect as dss
-    # unify & disable lines under threshold
+
+    S_base = mpc["baseMVA"] * 1e6  # base VA
+
     for row in line_arr:
-        _, fb, tb, st, _, length_mi, ln_name = row
-        if st == 1 and length_mi < switch_threshold:
+        _, fb, tb, st, lcid, _, ln_name = row
+        if st != 1:
+            continue
+
+        # Make the line active in DSS
+        dss.Lines.Name(str(ln_name))
+        # Ensure CktElement is the same thing
+        dss.Circuit.SetActiveElement(f"line.{ln_name}")
+
+        # 1) Prefer the explicit OpenDSS flag
+        is_switch_flag = False
+        try:
+            is_switch_flag = bool(dss.Lines.IsSwitch())
+        except Exception:
+            is_switch_flag = False
+
+        # 2) Fallback 1: very short "lines" without a linecode/geometry (often used as jumpers)
+        raw_len = dss.Lines.Length()
+        units_code = dss.Lines.Units()
+        length_ft = _len_to_feet(raw_len, units_code)
+        near_zero_by_len = (lcid == 0) and (length_ft < switch_len_ft)
+
+        # 3) Fallback 2 (optional): near-zero series impedance in per-unit
+        near_zero_by_imp = False
+        if z_pu_threshold is not None:
+            # Per-phase equivalent from DSS
+            R1 = float(dss.Lines.R1())  # ohms for current length
+            X1 = float(dss.Lines.X1())
+            Zmag = math.hypot(R1, X1)
+
+            # Use the from-bus LN base to build Z_base
+            buses = dss.CktElement.BusNames()
+            fb_name = buses[0].split(".")[0].lower() if buses and buses[0] else None
+            Vln = mpc["bus_vbase_ln"].get(fb_name, 1.0)  # volts
+            Z_base = (Vln * Vln) / S_base if Vln > 0 else 1.0
+            z_pu = Zmag / Z_base
+            near_zero_by_imp = (z_pu < z_pu_threshold)
+
+        if is_switch_flag or near_zero_by_len or near_zero_by_imp:
             union(int(fb), int(tb))
-            # disable in DSS
-            dss.Lines.Name(ln_name)
+            # Disable in DSS so it doesn't stamp Y
             dss.Command(f"Edit line.{ln_name} enabled=no")
 
     rep_map = {}
