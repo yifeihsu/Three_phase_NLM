@@ -11,7 +11,7 @@ import cupyx.scipy.sparse.linalg as cpsparse_linalg
 import scipy.sparse as sp
 
 
-def find_zero_injection_nodes(mpc, busphase_map, tol=1.0):
+def find_zero_injection_nodes(mpc, busphase_map, tol=1):
     """
     Identify phase-level nodes (bus-phase) that have effectively zero net injection,
     i.e. Generation - Load is within +/- tol (kW or kVar).
@@ -131,7 +131,7 @@ def compute_line_mahalanobis_distances(lambdaN, EA, mpc, epsilon_reg=1):
                 EA_sub_to_invert = EA_sub
                 is_regularized = False
             except np.linalg.LinAlgError:
-                print(f"Line {i_line}: EA_sub is not PSD. Applying regularization (epsilon={epsilon_reg}).")
+                # print(f"Line {i_line}: EA_sub is not PSD. Applying regularization (epsilon={epsilon_reg}).")
                 EA_sub_to_invert = EA_sub + np.eye(EA_sub.shape[0]) * epsilon_reg
                 is_regularized = True
 
@@ -268,39 +268,6 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
         xl[3*i + 2] = 1
         xl[3*i + nnodephase + 2] = np.deg2rad(120)
 
-    def print_estimation_results(x_est, mpc):
-        """
-        Prints the 3-phase bus data in a structured format.
-        """
-        nbus = len(mpc["bus3p"])
-        nnodephase = len(x_est) // 2
-        Vm = x_est[:nnodephase]
-        Va = np.rad2deg(x_est[nnodephase:])  # Convert radians to degrees
-
-        print("=" * 80)
-        print("|     3-ph Bus Data                                                            |")
-        print("=" * 80)
-        print("  3-ph            Phase A Voltage    Phase B Voltage    Phase C Voltage")
-        print(" Bus ID   Status   (kV)     (deg)     (kV)     (deg)     (kV)     (deg)")
-        print("--------  ------  -------  -------   -------  -------   -------  -------")
-
-        for i in range(nbus):
-            bus_id = int(mpc["bus3p"][i][0])
-            status = int(mpc["bus3p"][i][1])
-            # Phase A
-            Va_A = Va[3 * i]
-            Vm_A = Vm[3 * i] * mpc["bus3p"][i][2]/np.sqrt(3)  # Assuming Vm is in p.u.
-
-            # Phase B
-            Va_B = Va[3 * i + 1]
-            Vm_B = Vm[3 * i + 1] * mpc["bus3p"][i][2]/np.sqrt(3)
-
-            # Phase C
-            Va_C = Va[3 * i + 2]
-            Vm_C = Vm[3 * i + 2] * mpc["bus3p"][i][2]/np.sqrt(3)
-
-            print(f"{bus_id:>8}  {status:>6}  {Vm_A:>7.4f}  {Va_A:>7.2f}  ",
-                  f"{Vm_B:>7.4f}  {Va_B:>7.2f}  {Vm_C:>7.4f}  {Va_C:>7.2f}")
     ########################################################
     # Start iteration
     ########################################################
@@ -364,12 +331,28 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
             [ C_sp,          None,       None             ]
         ], format='csc')
 
-        # 5) Solve the linear system "Gain * dxl = r" via a sparse solver:
+        # 5) Solve the linear system on GPU (CuPy) and reuse the factorization later
+        Gain_csc = Gain.tocsc() if not isinstance(Gain, sps.csc_matrix) else Gain
+
+        # Move to GPU
+        Gain_gpu = cpsparse.csc_matrix(Gain_csc)  # GPU sparse CSC
+        r_gpu = cp.asarray(r, dtype=cp.float64)  # GPU RHS
+
+        # Factorize + solve on GPU
         try:
-            dxl = spsolve(Gain, r)  # dxl is 1D numpy array
-        except sps.linalg.MatrixRankWarning:
+            Gain_factor_gpu = cpsparse_linalg.splu(Gain_gpu)  # LU on GPU
+            dxl_gpu = Gain_factor_gpu.solve(r_gpu)
+            dxl = cp.asnumpy(dxl_gpu)  # back to CPU for the state update
+
+            # Save for reuse after convergence (EA/λ step)
+            last_Gain_gpu = Gain_gpu
+            last_factor_gpu = Gain_factor_gpu
+            last_size_top = size_top
+            last_nH = nH
+            last_nC = C_sp.shape[0]
+        except Exception as e:
             success = False
-            print("Sparse solver encountered a rank or convergence issue.")
+            print(f"GPU sparse solve failed: {e}")
             break
 
         # 6) Extract dx from dxl
@@ -393,7 +376,7 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
         success = False
         print("DSSE polar did not converge in max_iter steps.")
 
-    cp.cuda.set_allocator(cp.cuda.MemoryPool(cp.cuda.malloc_managed).malloc)
+    # cp.cuda.set_allocator(cp.cuda.MemoryPool(cp.cuda.malloc_managed).malloc)
     dtype = cp.float64
 
     Hp = jacobian_line_params(x_current, Ybus, mpc, busphase_map)
@@ -424,98 +407,54 @@ def run_lagrangian_polar(z, x_init, busphase_map, Ybus, R, mpc, max_iter=20, tol
     S_gpu = -S_gpu.T  # (n_params, n_meas + n_zi)
     # Scale for numerical stability
     # D_inv = 1e-6 # For impedance based multipliers
+    # D_inv = 1e6
     D_inv = 1
     S_gpu *= D_inv
 
-    if not isinstance(Gain, sp.csc_matrix):
-        print("Converting Gain to CSC format on CPU...")
-        Gain_csc = Gain.tocsc()
-    else:
-        Gain_csc = Gain
+    # if not isinstance(Gain, sp.csc_matrix):
+    #     print("Converting Gain to CSC format on CPU...")
+    #     Gain_csc = Gain.tocsc()
+    # else:
+    #     Gain_csc = Gain
+    #
+    # Gain_gpu = cpsparse.csc_matrix(Gain_csc)
+    #
+    # # Perform the sparse LU factorization on the GPU
+    # Gain_factor_gpu = cpsparse_linalg.splu(Gain_gpu)
+    #
+    # a, b, c = zero_block_sp.shape[0], I_H_sp.shape[0], C_sp.shape[0]
+    # n_total = Gain_gpu.shape[0]  # Total size from the GPU matrix
 
-    Gain_gpu = cpsparse.csc_matrix(Gain_csc)
-
-    # Perform the sparse LU factorization on the GPU
-    Gain_factor_gpu = cpsparse_linalg.splu(Gain_gpu)
-
-    a, b, c = zero_block_sp.shape[0], I_H_sp.shape[0], C_sp.shape[0]
-    n_total = Gain_gpu.shape[0]  # Total size from the GPU matrix
+    # Reuse the factorization & sizes from the last DSSE iteration
+    Gain_gpu = last_Gain_gpu
+    Gain_factor_gpu = last_factor_gpu
+    a, b, c = last_size_top, last_nH, last_nC
+    n_total = Gain_gpu.shape[0]
 
     row_E5_np = np.arange(a, a + b)
     col_E5_np = row_E5_np  # Columns to solve for to get E5
     row_E8_np = np.arange(a + b, a + b + c)
     cols_to_solve_np = col_E5_np  # Unique columns needed for solves
     # 2. Create the multi-RHS matrix on GPU (columns of Identity)
-    rhs_gpu = cp.zeros((n_total, len(cols_to_solve_np)), dtype=cp.float64)
-    # Place 1.0s using advanced indexing
-    gpu_col_indices = cp.arange(len(cols_to_solve_np))
-    # Ensure cols_to_solve_np is usable as index (needs to be int array/list)
-    rhs_gpu[cp.asarray(cols_to_solve_np), gpu_col_indices] = 1.0
+    # Columns we solved for were exactly the measurement block (size b)
+    rhs_gpu = cp.zeros((n_total, b), dtype=cp.float64)
+    col_idx = cp.arange(b)
+    rhs_gpu[a + col_idx, col_idx] = 1.0  # Identity columns at measurement block
 
-    solutions_gpu = Gain_factor_gpu.solve(rhs_gpu)  # Shape: (n_total, len(cols_to_solve_np))
+    solutions_gpu = Gain_factor_gpu.solve(rhs_gpu)  # (n_total, b)
+    E5_gpu = solutions_gpu[a:a + b, :]  # (b, b)
+    E8_gpu = solutions_gpu[a + b:a + b + c, :]  # (c, b)
+    phi_gpu = cp.concatenate([E5_gpu, E8_gpu], axis=0)  # (b+c, b)
 
-    row_E5_gpu_idx = cp.asarray(row_E5_np)
-    row_E8_gpu_idx = cp.asarray(row_E8_np)
+    # Vector (no dense matrix) for W^{-1}
+    W_diag = W_sp.diagonal().astype(np.float64)  # CPU vector of length b
+    W_inv_cols_gpu = cp.asarray(1.0 / W_diag)  # GPU vector, shape (b,)
 
-    E5_gpu = solutions_gpu[row_E5_gpu_idx, :]  # Shape: (b, len(cols_to_solve_np))
-    E8_gpu = solutions_gpu[row_E8_gpu_idx, :]  # Shape: (c, len(cols_to_solve_np))
+    # step1 = phi * diag(W_inv) * phi^T
+    step1_gpu = (phi_gpu * W_inv_cols_gpu) @ phi_gpu.T  # (b+c, b+c)
 
-    # print(f"E5_gpu computed: shape={E5_gpu.shape}, dtype={E5_gpu.dtype}")
-    # print(f"E8_gpu computed: shape={E8_gpu.shape}, dtype={E8_gpu.dtype}")
-
-    del rhs_gpu
-    del solutions_gpu
-
-    phi_gpu = cp.concatenate([E5_gpu, E8_gpu], axis=0)
-
-    W_diag = W_sp.diagonal()
-    W_inv_diag = 1.0 / W_diag
-    W_inv_gpu = cp.diag(cp.asarray(W_inv_diag))
-
-    # 7) step1_sp = phi_sp * W_inv_sp * phi_sp^T  (dense GPU version)
-    #    The dimensions need to match here. phi_gpu is (b+c, num_cols_solved).
-    #    W_inv_gpu is (n_total, n_total). This multiplication isn't directly possible
-    #    unless W corresponds only to the rows/cols represented in phi_gpu.
-    #    Assuming W corresponds to the dimensions combined in phi (rows a to a+b+c)
-    #    Let's extract the relevant part of W_inv_gpu.
-    W_inv_phi_rows_cols_idx = cp.arange(a, a + b + c)  # Indices corresponding to phi's rows
-    if W_inv_gpu.shape[0] == n_total:
-        # Extract the sub-diagonal matrix of W corresponding to phi's rows
-        W_inv_sub_gpu = W_inv_gpu[cp.ix_(W_inv_phi_rows_cols_idx, W_inv_phi_rows_cols_idx)]
-        # Check if phi_gpu's columns match the dimension of W_inv_sub_gpu (b+c)
-        # This depends on whether col_E5_np covered the same range a to a+b+c
-        if phi_gpu.shape[1] != W_inv_sub_gpu.shape[0]:
-            # This mismatch likely arises if cols_to_solve_np (which is row_E5_np)
-            # is different from the full range of rows in phi (row_E5_np + row_E8_np).
-            # Let's reconsider the original goal. If E5 and E8 are blocks of Gain^{-1},
-            # then phi is [ G^{-1}_{rowE5, colE5} ]
-            #              [ G^{-1}_{rowE8, colE5} ]
-            # The operation phi * W_inv * phi.T implies W is diagonal and corresponds
-            # to the columns used (colE5). Let's assume W should only use indices col_E5.
-            W_inv_cols_idx = cp.asarray(col_E5_np)  # Indices corresponding to phi's columns
-            W_inv_sub_gpu = W_inv_gpu[cp.ix_(W_inv_cols_idx, W_inv_cols_idx)]  # W needs to match cols of phi
-
-            print(
-                f"Computing step1_sp = phi * W_inv[cols,cols] * phi.T on GPU (dense)... phi:{phi_gpu.shape}, W_inv_sub:{W_inv_sub_gpu.shape}")
-            # phi_gpu @ W_inv_sub_gpu -> (b+c, num_cols) @ (num_cols, num_cols) = (b+c, num_cols)
-            # result @ phi_gpu.T -> (b+c, num_cols) @ (num_cols, b+c) = (b+c, b+c)
-            step1_gpu = phi_gpu @ W_inv_sub_gpu @ phi_gpu.T  # covu in dense GPU
-        else:
-            # If by chance len(col_E5_np) == b+c and corresponds to the right rows
-            print(
-                f"Computing step1_sp = phi * W_inv[rows,rows] * phi.T on GPU (dense)... phi:{phi_gpu.shape}, W_inv_sub:{W_inv_sub_gpu.shape}")
-            step1_gpu = phi_gpu @ W_inv_sub_gpu @ phi_gpu.T
-    else:
-        # If W_inv_gpu was already the correct sub-size
-        print(
-            f"Computing step1_sp = phi * W_inv * phi.T on GPU (dense)... phi:{phi_gpu.shape}, W_inv:{W_inv_gpu.shape}")
-        if phi_gpu.shape[1] != W_inv_gpu.shape[0]:
-            raise ValueError(f"Dimension mismatch for phi @ W_inv: {phi_gpu.shape[1]} vs {W_inv_gpu.shape[0]}")
-        step1_gpu = phi_gpu @ W_inv_gpu @ phi_gpu.T
-
-    # 8) Now compute EA = S * covu * S^T on GPU
+    # EA = S * step1 * S^T
     print("Computing EA = S * step1 * S.T on GPU...")
-    # Be careful with the round-off errors
     S_cov_gpu = S_gpu @ step1_gpu
     ea_gpu_full = S_cov_gpu @ S_gpu.T
     ### Now ea is scaled by D_inv^2

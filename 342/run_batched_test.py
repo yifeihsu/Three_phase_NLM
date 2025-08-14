@@ -95,7 +95,7 @@ def run_single_burnout_test(dss_filename, line_to_burn_out, true_base_name, mpc_
         Y_pu_true, _ = build_global_y_per_unit(mpc_true)
         z = measurement_function(x_true, Y_pu_true, mpc_true, busphase_map_true)
         num_bus_phases = len(busphase_map_true)
-        std_P, std_Q, std_V = 1e-4, 1e-4, 1e-5
+        std_P, std_Q, std_V = 1e-3, 1e-3, 1e-4
         diag_R = ([std_P ** 2] * num_bus_phases + [std_Q ** 2] * num_bus_phases + [std_V ** 2] * num_bus_phases)
         R = np.diag(diag_R)
         z_noisy = z + np.random.normal(0.0, np.sqrt(diag_R))
@@ -166,6 +166,9 @@ def main():
     successful_detections = 0
     total_tests = 0
 
+    failed_line_ids = []   # <-- collect misdetections
+    skipped_line_ids = []  # <-- collect PF-not-converged / skipped tests
+
     for base_name, cables in parallel_line_groups.items():
         total_tests += 1
         cable_to_burn = cables[1]
@@ -184,8 +187,13 @@ def main():
 
         if result is True:
             successful_detections += 1
+        elif result is False:
+            # Detection ran but was wrong -> record the actual burnt Line ID
+            failed_line_ids.append((base_name, cable_to_burn))
         elif result is None:
-            total_tests -= 1
+            # Power flow for the "reality" didn't converge -> record as skipped
+            skipped_line_ids.append((base_name, cable_to_burn))
+            total_tests -= 1  # keep your success-rate denominator consistent
 
         time.sleep(0.1)
 
@@ -202,6 +210,15 @@ def main():
     else:
         print("No valid tests were completed.")
 
+    if failed_line_ids:
+        print("\nLine IDs with FAILED detection:")
+        for base_name, line_id in failed_line_ids:
+            print(f"  - Group '{base_name}': Line '{line_id}'")
+
+    if skipped_line_ids:
+        print("\nLine IDs SKIPPED (PF did not converge):")
+        for base_name, line_id in skipped_line_ids:
+            print(f"  - Group '{base_name}': Line '{line_id}'")
 
 if __name__ == "__main__":
     main()

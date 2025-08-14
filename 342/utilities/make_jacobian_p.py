@@ -84,7 +84,7 @@ def _compute_param_injection_partial(
     V  = Vm * np.exp(1j * Va)
 
     # indices of the six phase nodes affected by this line
-    line_data = mpc["line3p"][line_id - 1]
+    line_data = next(row for row in mpc["line3p"] if int(row[-1]) == line_id)
     fbus = int(line_data[1]) - 1
     tbus = int(line_data[2]) - 1
     f_idx = [fbus * 3 + k for k in range(3)]

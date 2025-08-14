@@ -65,7 +65,7 @@ def main():
     num_P_inj = num_Q_inj = num_Vmag = num_bus_phases
 
     # standard deviations
-    std_P, std_Q, std_V = 1e-4, 1e-4, 1e-5
+    std_P, std_Q, std_V = 1e-4, 1e-4, 1e-4
 
     diag_R = (
             [std_P ** 2] * num_P_inj +
