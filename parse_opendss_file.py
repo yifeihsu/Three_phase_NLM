@@ -1,436 +1,170 @@
-# import opendssdirect as dss
-# import numpy as np
-# import math
-# from scipy.sparse import csc_matrix, lil_matrix, diags
-#
-# def parse_opendss_to_mpc(dss_filename, baseMVA=1.0):
-#     """
-#     1) Clears and redirects the OpenDSS model in 'dss_filename'.
-#     2) Solves the circuit (so we can read bus voltages, load powers, etc.).
-#     3) Parses Buses, Lines, Transformers, Loads, Gens, storing in an 'mpc' dict
-#        similar to a 'matpower-like' structure.
-#
-#     Additional:
-#       - Stores 'bus_vbase_ln' dictionary with each bus's line-to-neutral base in volts.
-#       - Optionally stores 'node_order' if you want a certain bus-phase listing.
-#       - Stores a busname->ID map in mpc["busname_to_id"].
-#
-#     Returns:
-#       mpc (dict)
-#     """
-#
-#     # 1) Clear & Redirect
-#     dss.Command("Clear")
-#     dss.Command(f'Redirect "{dss_filename}"')
-#     dss.Solution.Solve()
-#
-#     circuit = dss.Circuit
-#     bus_names = circuit.AllBusNames()
-#
-#     mpc = {}
-#     mpc["version"] = "2"
-#     mpc["baseMVA"] = baseMVA
-#     mpc["freq"] = 60.0
-#
-#     # We'll store a dictionary of bus LN base voltages
-#     mpc["bus_vbase_ln"] = {}
-#     # We'll store bus_id mapping
-#     busname_to_id = {}
-#     # A list for bus3p: [bus_id, type, base_kV_LL, VmA, VmB, VmC, VaA, VaB, VaC]
-#     bus3p_list = []
-#
-#     for i, busname in enumerate(bus_names, start=1):
-#         bus_lc = busname.lower()
-#         busname_to_id[bus_lc] = i
-#         dss.Circuit.SetActiveBus(busname)
-#
-#         # In many distribution feeders, Bus.kVBase() might be L-N or L-L depending on the .dss.
-#         # We assume it's line-to-line for typical "kVBase=12.47" feeders.
-#         # If it's actually L-N, you should adapt.
-#         kv_ln = dss.Bus.kVBase()
-#         kv_ll = kv_ln * math.sqrt(3)
-#         if (kv_ll is None) or (kv_ll <= 1e-6):
-#             kv_ll = 1.0  # fallback
-#
-#         # We'll assume the line-to-neutral base is kv_ll / sqrt(3):
-#
-#         # Store in volts:
-#         mpc["bus_vbase_ln"][bus_lc] = kv_ln * 1e3
-#
-#         # Let's treat all buses as type=1 (PQ)
-#         # If you detect a slack bus by name or an HV feed, you can do type=3, etc.
-#         if bus_lc == "p1":
-#             bus_type = 3
-#         else:
-#             bus_type = 1
-#
-#         # We read the post-solve bus voltages.
-#         # We'll store them in per-unit (just for a guess).
-#         nodes = dss.Bus.Nodes()  # e.g. [1,2,3]
-#         mag_angle = dss.Bus.VMagAngle()  # e.g. [V1, ang1, V2, ang2, ...]
-#
-#         # create default arrays
-#         vm = [0.0, 0.0, 0.0]
-#         va = [0.0, 0.0, 0.0]
-#         pair_list = list(zip(mag_angle[0::2], mag_angle[1::2]))
-#
-#         for idx_phase, node_number in enumerate(nodes):
-#             if idx_phase < len(pair_list):
-#                 # convert magnitude to p.u. wrt LN base
-#                 # if Bus.kVBase() was line-to-line, LN base ~ kv_ll/sqrt(3)
-#                 v_magnitude = pair_list[idx_phase][0]  # in volts
-#                 v_angle_deg = pair_list[idx_phase][1]
-#                 # convert to p.u. magnitude
-#                 v_pu = 0.0
-#                 if kv_ln > 1e-9:
-#                     v_pu = (v_magnitude) / (kv_ln * 1e3)
-#                 vm[idx_phase] = v_pu
-#                 # convert angle to radians if you prefer
-#                 va[idx_phase] = math.radians(v_angle_deg)
-#
-#         # bus3p row
-#         row = [
-#             i,            # bus_id
-#             bus_type,     # type
-#             kv_ll,        # base_kV_LL
-#             vm[0], vm[1], vm[2],
-#             va[0], va[1], va[2]
-#         ]
-#         bus3p_list.append(row)
-#
-#     mpc["bus3p"] = np.array(bus3p_list, dtype=float)
-#     mpc["busname_to_id"] = busname_to_id
-#
-#     # 2) Lines
-#     all_elems = circuit.AllElementNames()
-#     line3p_list = []
-#     line_counter = 0
-#     for elem_name in all_elems:
-#         if elem_name.lower().startswith("line."):
-#             line_counter += 1
-#             dss.Circuit.SetActiveElement(elem_name)
-#
-#             fb = dss.CktElement.BusNames()[0].split(".")[0].lower()
-#             tb = dss.CktElement.BusNames()[1].split(".")[0].lower()
-#             fbus_id = busname_to_id.get(fb, 0)
-#             tbus_id = busname_to_id.get(tb, 0)
-#
-#             status = 1 if dss.CktElement.Enabled() else 0
-#             line_name = elem_name.split(".", 1)[1]
-#             dss.Lines.Name(line_name)
-#
-#             length_mi = dss.Lines.Length()
-#             # line code name
-#             lcode = dss.Lines.LineCode()
-#             lcid = 0  # or parse line code map if needed
-#
-#             line3p_list.append([
-#                 line_counter,
-#                 fbus_id,
-#                 tbus_id,
-#                 status,
-#                 lcid,
-#                 length_mi
-#             ])
-#     mpc["line3p"] = np.array(line3p_list, dtype=float)
-#
-#     # 3) Transformers
-#     xfmr3p_list = []
-#     xfmr_counter = 0
-#     for elem_name in all_elems:
-#         if elem_name.lower().startswith("transformer."):
-#             xfmr_counter += 1
-#             dss.Circuit.SetActiveElement(elem_name)
-#             xf = dss.Transformers
-#
-#             buses = dss.CktElement.BusNames()
-#             fb = buses[0].split(".")[0].lower()
-#             tb = buses[1].split(".")[0].lower()
-#             fbus_id = busname_to_id.get(fb, 0)
-#             tbus_id = busname_to_id.get(tb, 0)
-#
-#             status = 1 if dss.CktElement.Enabled() else 0
-#             xf.First()  # if multi-winding, adapt logic
-#
-#             xf.Wdg(1)
-#             w1_kv = xf.kV()
-#             w1_kva = xf.kVA()
-#
-#             xf.Wdg(2)
-#             w2_kv = xf.kV()
-#             w2_kva = xf.kVA()
-#
-#             r = xf.Rneut()
-#             x = xf.Xhl()
-#
-#             basekVA = max(w1_kva, w2_kva)
-#             xfmr3p_list.append([
-#                 xfmr_counter,
-#                 fbus_id,
-#                 tbus_id,
-#                 status,
-#                 r, x,
-#                 basekVA,
-#                 w1_kv,
-#                 w2_kv
-#             ])
-#
-#     mpc["xfmr3p"] = np.array(xfmr3p_list, dtype=float)
-#
-#     # 4) Loads (storing solved phase power usage)
-#     load3p_list = []
-#     load_id_counter = 0
-#     for elem_name in all_elems:
-#         if not elem_name.lower().startswith("load."):
-#             continue
-#         load_id_counter += 1
-#         dss.Circuit.SetActiveElement(elem_name)
-#         load_bus_full = dss.CktElement.BusNames()[0]
-#         bus_only = load_bus_full.split(".")[0].lower()
-#         bus_id = busname_to_id.get(bus_only, 0)
-#         status = 1 if dss.CktElement.Enabled() else 0
-#
-#         powers = dss.CktElement.Powers()
-#         n_conds = dss.CktElement.NumConductors()
-#         nodes = dss.CktElement.NodeOrder()
-#
-#         pA = pB = pC = 0.0
-#         qA = qB = qC = 0.0
-#         for i_cond in range(n_conds):
-#             p_cond = powers[2*i_cond]
-#             q_cond = powers[2*i_cond + 1]
-#             phase_node = 0
-#             if i_cond < len(nodes):
-#                 phase_node = nodes[i_cond]
-#             if phase_node == 1:
-#                 pA += p_cond
-#                 qA += q_cond
-#             elif phase_node == 2:
-#                 pB += p_cond
-#                 qB += q_cond
-#             elif phase_node == 3:
-#                 pC += p_cond
-#                 qC += q_cond
-#             else:
-#                 pass
-#
-#         # Convert sign so we store positive consumption
-#         pA_cons = -pA
-#         pB_cons = -pB
-#         pC_cons = -pC
-#         qA_cons = -qA
-#         qB_cons = -qB
-#         qC_cons = -qC
-#
-#         load3p_list.append([
-#             load_id_counter,
-#             bus_id,
-#             status,
-#             pA_cons, pB_cons, pC_cons,
-#             qA_cons, qB_cons, qC_cons
-#         ])
-#     mpc["load3p"] = np.array(load3p_list, dtype=float)
-#
-#     # 5) Generators (optional)
-#     gen3p_list = []
-#     gen_counter = 0
-#     for elem_name in all_elems:
-#         if elem_name.lower().startswith("generator."):
-#             gen_counter += 1
-#             dss.Circuit.SetActiveElement(elem_name)
-#             gen_bus = dss.CktElement.BusNames()[0].split(".")[0].lower()
-#             bus_id = busname_to_id.get(gen_bus, 0)
-#             status = 1 if dss.CktElement.Enabled() else 0
-#             dss.Generators.Name(elem_name.split(".")[1])
-#             pg = dss.Generators.kW()
-#             qg = dss.Generators.kvar()
-#             vg = 1.0
-#             pgA = pg/3.0
-#             pgB = pg/3.0
-#             pgC = pg/3.0
-#             qgA = qg/3.0
-#             qgB = qg/3.0
-#             qgC = qg/3.0
-#             gen3p_list.append([
-#                 gen_counter, bus_id, status,
-#                 vg, vg, vg,
-#                 pgA, pgB, pgC,
-#                 qgA, qgB, qgC
-#             ])
-#     mpc["gen3p"] = np.array(gen3p_list, dtype=float)
-#
-#     # 6) If you want a "node_order" that enumerates each bus-phase
-#     #    (like "busX.1", "busX.2", "busX.3"), you can build it here
-#     #    from the entire circuit or from AllNodeNames():
-#     all_nodenames = dss.Circuit.AllNodeNames()  # e.g. ["bus1.1", "bus1.2", ...]
-#     # but check if they are consistent with LN or LL naming
-#     mpc["node_order"] = [nm.lower() for nm in all_nodenames]
-#
-#     return mpc
-#
-#
-# def build_global_y_per_unit(mpc, dss_filename):
-#     """
-#     Builds the global Y matrix in per-unit by stamping lines/transformers YPrim
-#     according to the node order and bus LN bases in the parsed 'mpc'.
-#
-#     Args:
-#       mpc (dict): structure returned by parse_opendss_to_mpc
-#       dss_filename (str): path to the same main .dss used in parse
-#     Returns:
-#       Y_pu (csc_matrix): system admittance matrix in p.u.
-#       node_order (list[str]): the node names in the same row/col order as Y_pu
-#     """
-#     # 1) Reload the circuit
-#     dss.Command("Clear")
-#     dss.Command(f'Redirect "{dss_filename}"')
-#     dss.Solution.Solve()
-#
-#     # 2) We'll rely on the same node_order from parse_mpc
-#     if "node_order" not in mpc:
-#         raise ValueError("mpc is missing 'node_order'; cannot build Y in consistent indexing.")
-#
-#     node_order = mpc["node_order"]
-#     node_index_map = {nd: i for i, nd in enumerate(node_order)}
-#     n_nodes = len(node_order)
-#
-#     # Global Y in LIL format
-#     Y_global = lil_matrix((n_nodes, n_nodes), dtype=complex)
-#
-#     def get_local_node_names():
-#         """
-#         Returns a list of fully qualified node names for the active element.
-#         We remove any extra dot-phases from the actual bus name.
-#         """
-#         phases = dss.CktElement.NodeOrder()  # e.g. [1,2,3,1,2,3]
-#         bus_names = dss.CktElement.BusNames()  # e.g. ["p1.1.2.3", "p2.1.2.3"]
-#         n_terminals = dss.CktElement.NumTerminals()
-#         total_nodes = len(phases)
-#         n_nodes_per_term = total_nodes // n_terminals
-#
-#         local_nodes = []
-#         idx = 0
-#         for t in range(n_terminals):
-#             raw_bus_full = bus_names[t].lower()
-#             # Split off any dot after the first
-#             bus_split = raw_bus_full.split('.', 1)  # ["p1", "1.2.3"] if raw_bus_full="p1.1.2.3"
-#             bus_base = bus_split[0]  # "p1"
-#
-#             for _ in range(n_nodes_per_term):
-#                 ph = phases[idx]
-#                 idx += 1
-#                 if ph == 0:
-#                     local_nodes.append(f"{bus_base}.0")
-#                 else:
-#                     local_nodes.append(f"{bus_base}.{ph}")
-#         return local_nodes
-#
-#     def stamp_yprim(yprim_matrix, local_nodes):
-#         dim = yprim_matrix.shape[0]
-#         for r in range(dim):
-#             nr = local_nodes[r].lower()
-#             if nr not in node_index_map:
-#                 continue
-#             r_glob = node_index_map[nr]
-#             for c in range(dim):
-#                 nc = local_nodes[c].lower()
-#                 if nc not in node_index_map:
-#                     continue
-#                 c_glob = node_index_map[nc]
-#                 Y_global[r_glob, c_glob] += yprim_matrix[r, c]
-#
-#     # 3) Loop over Lines, Transformers (skip loads/gens)
-#     # Lines
-#     for ln_name in dss.Lines.AllNames():
-#         dss.Lines.Name(ln_name)
-#         yprim = dss.CktElement.YPrim()
-#         cplx = []
-#         for i in range(0, len(yprim), 2):
-#             re = yprim[i]
-#             im = yprim[i+1]
-#             cplx.append(re + 1j*im)
-#         n_loc = int(math.sqrt(len(cplx)))
-#         y_mat = np.array(cplx).reshape((n_loc, n_loc))
-#         loc_nodes = get_local_node_names()
-#         stamp_yprim(y_mat, loc_nodes)
-#
-#     # Transformers
-#     for xf_name in dss.Transformers.AllNames():
-#         dss.Transformers.Name(xf_name)
-#         yprim = dss.CktElement.YPrim()
-#         cplx = []
-#         for i in range(0, len(yprim), 2):
-#             re = yprim[i]
-#             im = yprim[i+1]
-#             cplx.append(re + 1j*im)
-#         n_loc = int(math.sqrt(len(cplx)))
-#         y_mat = np.array(cplx).reshape((n_loc, n_loc))
-#         loc_nodes = get_local_node_names()
-#         stamp_yprim(y_mat, loc_nodes)
-#
-#     # Convert Y_global to csc
-#     Y_phys = Y_global.tocsc()
-#
-#     # 4) Convert to per-unit: Y_pu = (1 / S_base) * D * Y_phys * D
-#     # where D[i,i] = base voltage (LN) for that node, in volts.
-#     S_base = mpc["baseMVA"] * 1e6
-#     D_vec = np.ones(n_nodes)
-#
-#     # We'll parse node_order: each node is "bus.phase"
-#     # We look up bus in mpc["bus_vbase_ln"], then store it in D_vec[i].
-#     for i, nd in enumerate(node_order):
-#         bus_only = nd.split(".")[0]  # "busx"
-#         if bus_only in mpc["bus_vbase_ln"]:
-#             ln_base = mpc["bus_vbase_ln"][bus_only]
-#             D_vec[i] = ln_base  # in volts
-#         else:
-#             D_vec[i] = 1.0
-#
-#     D_mat = diags(D_vec, 0, shape=(n_nodes, n_nodes), dtype=complex)
-#
-#     Ytemp = (D_mat @ Y_phys) @ D_mat
-#     Y_pu = (1.0 / S_base) * Ytemp
-#
-#     return Y_pu, node_order
-#
-#
-# def main():
-#     # Example usage with Master.dss:
-#     dss_filename = "Master.DSS"
-#
-#     # 1) Parse
-#     mpc = parse_opendss_to_mpc(dss_filename, baseMVA=1.0)
-#     # You now have bus, line, xfmr, load data, plus bus_vbase_ln, node_order, etc.
-#
-#     # 2) Build Y in per-unit
-#     Y_pu, node_ord = build_global_y_per_unit(mpc, dss_filename)
-#
-#     # 3) Print or debug
-#     print("Node order from parse:", node_ord)
-#     print("Per-unit Y matrix shape:", Y_pu.shape)
-#     # e.g. convert small portion to dense for printing:
-#     # Y_dense = Y_pu[:10,:10].toarray()
-#     # print(Y_dense)
-#
-#
-# if __name__ == "__main__":
-#     main()
-
 import opendssdirect as dss
 import numpy as np
 import math
 from scipy.sparse import lil_matrix, csc_matrix, diags
 
+def parse_symmetric_3x3_lower(line_val):
+    """
+    Given something like:
+      Rmatrix=[0.0274982  |0.0175228  0.0274982  |0.0175225  0.0175228  0.0274982  ]
+    which yields 6 numeric tokens (after removing brackets and '|'), e.g.:
+      [r11, r21, r22, r31, r32, r33]
 
-def parse_opendss_to_mpc(dss_filename, baseMVA=1.0):
+    we build the symmetrical 3×3 as:
+        R(1,1) = r11
+        R(2,1) = R(1,2) = r21
+        R(2,2) = r22
+        R(3,1) = R(1,3) = r31
+        R(3,2) = R(2,3) = r32
+        R(3,3) = r33
+
+    and return it as a 3×3 numpy array.
     """
-    1) Clears and redirects the OpenDSS model in 'dss_filename'.
-    2) Solves the circuit (so we can read bus voltages, load powers, etc.).
-    3) Parses Buses, Lines, Transformers, Loads, Gens, storing in an 'mpc' dict
-       with fields:
-         mpc["bus3p"], mpc["line3p"], mpc["xfmr3p"], mpc["load3p"], mpc["gen3p"]
-         mpc["bus_vbase_ln"], mpc["busname_to_id"], mpc["node_order"], ...
+    # 1) Strip the leading "Rmatrix=[", trailing "]", etc.
+    eq_pos = line_val.find("=")
+    if eq_pos >= 0:
+        line_val = line_val[eq_pos + 1:]
+    line_val = line_val.strip().lstrip("[").rstrip("]").strip()
+
+    # Replace '|' with space
+    line_val = line_val.replace("|", " ")
+    tokens = line_val.split()
+    vals = [float(t) for t in tokens]
+
+    if len(vals) != 6:
+        raise ValueError(
+            f"Expected 6 numeric entries for a 3-phase (symmetric lower-triangle) matrix, "
+            f"got {len(vals)}: {vals}"
+        )
+
+    # Each list is [r11, r21, r22, r31, r32, r33]
+    r11, r21, r22, r31, r32, r33 = vals
+
+    # Build the full symmetrical 3×3
+    mat_3x3 = np.array([
+        [r11, r21, r31],
+        [r21, r22, r32],
+        [r31, r32, r33]
+    ])
+    return mat_3x3
+
+def parse_line_constants_file(lc_filename):
     """
+    Parses the line constants from a file such as "LineConstantsCode.txt"
+    where each Rmatrix/Xmatrix/Cmatrix has 6 entries (the symmetric lower triangle).
+
+    Returns:
+       mpc_lc: A NumPy array with columns:
+         [
+           lcid,
+           R11, R21, R31, R22, R32, R33,
+           X11, X21, X31, X22, X32, X33,
+           C11, C21, C31, C22, C32, C33
+         ]
+       lcid_map: dictionary linecode_name.lower() -> lcid
+    """
+    lc_list = []  # will collect rows of numeric data
+    lcid_map = {}  # name -> numeric ID
+    current_name = None
+    current_r = None
+    current_x = None
+    current_c = None
+
+    lcid_counter = 0
+
+    def finalize_linecode():
+        """
+        Once we have current_name and the 3 symmetric matrices (R, X, C),
+        store them in lc_list in the requested final order.
+        """
+        nonlocal lcid_counter
+        lcid_counter += 1
+        # current_r, current_x, current_c are each 3×3
+        # reorder them into [r11, r21, r31, r22, r32, r33]
+
+        R = current_r
+        X = current_x
+        C = current_c
+
+        r11 = R[0, 0]
+        r21 = R[1, 0]
+        r31 = R[2, 0]
+        r22 = R[1, 1]
+        r32 = R[2, 1]
+        r33 = R[2, 2]
+        x11 = X[0, 0]
+        x21 = X[1, 0]
+        x31 = X[2, 0]
+        x22 = X[1, 1]
+        x32 = X[2, 1]
+        x33 = X[2, 2]
+        c11 = C[0, 0]
+        c21 = C[1, 0]
+        c31 = C[2, 0]
+        c22 = C[1, 1]
+        c32 = C[2, 1]
+        c33 = C[2, 2]
+
+        row = [
+            lcid_counter,
+            r11, r21, r31, r22, r32, r33,
+            x11, x21, x31, x22, x32, x33,
+            c11, c21, c31, c22, c32, c33
+        ]
+        lc_list.append(row)
+        lcid_map[current_name.lower()] = lcid_counter
+
+    with open(lc_filename, "r") as fh:
+        for line in fh:
+            line = line.strip()
+            # Ignore blank lines or '!' comments
+            if (not line) or line.startswith("!"):
+                continue
+
+            if line.lower().startswith("new linecode."):
+                # If we had a previous block, finalize it
+                if (current_name is not None) and (current_r is not None) and (current_x is not None) and (
+                        current_c is not None):
+                    finalize_linecode()
+
+                # Parse linecode name
+                parts = line.split(None, 2)  # e.g. ["New","Linecode.trans","nphases=3 ..."]
+                # The second token should be "Linecode.trans" (for example)
+                second = parts[1]  # "Linecode.trans"
+                # Name after "Linecode."
+                name_only = second.split(".", 1)[1]  # "trans"
+                current_name = name_only
+                # reset
+                current_r = None
+                current_x = None
+                current_c = None
+
+            elif "~ rmatrix=" in line.lower():
+                current_r = parse_symmetric_3x3_lower(line.lstrip("~").strip())
+            elif "~ xmatrix=" in line.lower():
+                current_x = parse_symmetric_3x3_lower(line.lstrip("~").strip())
+            elif "~ cmatrix=" in line.lower():
+                current_c = parse_symmetric_3x3_lower(line.lstrip("~").strip())
+            else:
+                # you can parse other fields like "units=kft", "nphases=3", etc. if needed
+                pass
+
+        # End of file => finalize any pending linecode
+        if (current_name is not None) and (current_r is not None) and (current_x is not None) and (
+                current_c is not None):
+            finalize_linecode()
+
+    # convert to np.array
+    mpc_lc = np.array(lc_list, dtype=float)
+    return mpc_lc, lcid_map
+
+def parse_opendss_to_mpc(dss_filename, baseMVA=1.0, lc_filename="LineConstantsCode.txt", slack_bus="p1"):
+    """
+    Example of reading the circuit from dss_filename,
+    and also reading line constants from lc_filename (which has 6-entry symmetrical-lower matrices).
+    """
+    # 1) Parse line constants from external file
+    mpc_lc, lcid_map = parse_line_constants_file(lc_filename)
 
     dss.Command("Clear")
     dss.Command(f'Redirect "{dss_filename}"')
@@ -439,62 +173,69 @@ def parse_opendss_to_mpc(dss_filename, baseMVA=1.0):
     circuit = dss.Circuit
     bus_names = circuit.AllBusNames()
 
+    # Initialize mpc
     mpc = {}
     mpc["baseMVA"] = baseMVA
     mpc["freq"] = 60.0
-
-    # We'll store each bus's LN base voltage in: mpc["bus_vbase_ln"][bus_lc] = <volts>
+    mpc["lc"] = mpc_lc  # numeric matrix of linecodes
+    mpc["lcid_map"] = lcid_map  # name->ID map
     mpc["bus_vbase_ln"] = {}
 
-    # We'll store "bus_name -> integer bus_id"
+    # Map: bus_name -> bus_id
     busname_to_id = {}
-    # We'll store bus data: [bus_id, type, base_kV_LL, VmA, VmB, VmC, VaA, VaB, VaC]
     bus3p_list = []
+    all_elems = circuit.AllElementNames()
+    # Identify all buses that have generators
+    gen_buses = set()
+    for elem in all_elems:
+        el = elem.lower()
+        if el.startswith("generator.") or el.startswith("vsource."):
+            dss.Circuit.SetActiveElement(elem)
+            g_bus = dss.CktElement.BusNames()[0].split(".")[0].lower()
+            gen_buses.add(g_bus)
 
-    # 1) Build bus table
+    # Build bus table
     for i, busname in enumerate(bus_names, start=1):
         bus_lc = busname.lower()
         busname_to_id[bus_lc] = i
 
         dss.Circuit.SetActiveBus(busname)
-        kv_ln = dss.Bus.kVBase()  # LN base if the .dss is that way
-        if kv_ln is None or kv_ln < 1e-9:
+        kv_ln = dss.Bus.kVBase()
+        if (kv_ln is None) or (kv_ln < 1e-9):
             kv_ln = 1.0
         kv_ll = kv_ln * math.sqrt(3)
 
-        # store LN base in volts
         mpc["bus_vbase_ln"][bus_lc] = kv_ln * 1e3
 
-        # example: bus_type = 3 if bus == "p1", else 1
-        bus_type = 3 if (bus_lc == "sourcebus") else 1
+        if bus_lc == slack_bus:
+            bus_type = 3  # Slack bus
+        elif bus_lc in gen_buses:
+            bus_type = 2  # PV (generator) bus
+        else:
+            bus_type = 1  # PQ bus
 
-        # post-solve bus voltages
-        nodes = dss.Bus.Nodes()  # e.g. [1,2,3]
-        magangle = dss.Bus.VMagAngle()  # e.g. [V1, ang1, V2, ang2, ...]
+        nodes = dss.Bus.Nodes()
+        magangle = dss.Bus.VMagAngle()
         pair_list = list(zip(magangle[0::2], magangle[1::2]))
 
         vm = [0.0, 0.0, 0.0]
         va = [0.0, 0.0, 0.0]
         for idx_phase, node_num in enumerate(nodes):
             if idx_phase < len(pair_list):
-                vmag = pair_list[idx_phase][0]  # in volts
+                vmag = pair_list[idx_phase][0]
                 vang_deg = pair_list[idx_phase][1]
-                v_pu = (vmag)/(kv_ln*1e3) if kv_ln>1e-9 else 0.0
-                vm[idx_phase] = v_pu
+                vm[idx_phase] = (vmag) / (kv_ln * 1e3)
                 va[idx_phase] = math.radians(vang_deg)
 
         bus3p_list.append([
-            i,                     # bus_id
-            bus_type,              # type
-            kv_ll,                 # base_kV_LL
+            i, bus_type, kv_ll,
             vm[0], vm[1], vm[2],
             va[0], va[1], va[2]
         ])
-
     mpc["bus3p"] = np.array(bus3p_list, dtype=float)
     mpc["busname_to_id"] = busname_to_id
 
-    # 2) Gather lines, xfmrs, loads, gens
+    # Gather lines, xfmrs, loads, gens
     all_elems = circuit.AllElementNames()
 
     line_data = []
@@ -509,11 +250,16 @@ def parse_opendss_to_mpc(dss_filename, baseMVA=1.0):
             tbid = busname_to_id.get(tb, 0)
 
             st = 1 if dss.CktElement.Enabled() else 0
-            ln_name = elem.split(".",1)[1]
+            ln_name = elem.split(".", 1)[1].lower()
             dss.Lines.Name(ln_name)
             ln_length = dss.Lines.Length()
-            ln_code = dss.Lines.LineCode()
-            lcid = 0
+
+            # Look up linecode
+            ln_code_name = dss.Lines.Geometry() if dss.Lines.Geometry() else dss.Lines.LineCode()
+            if ln_code_name:
+                lcid = lcid_map.get(ln_code_name.lower(), 0)
+            else:
+                lcid = 0
 
             line_data.append([
                 line_counter,
@@ -522,7 +268,7 @@ def parse_opendss_to_mpc(dss_filename, baseMVA=1.0):
                 st,
                 lcid,
                 ln_length,
-                ln_name.lower()
+                ln_name
             ])
     mpc["line3p"] = np.array(line_data, dtype=object)
 
@@ -537,8 +283,8 @@ def parse_opendss_to_mpc(dss_filename, baseMVA=1.0):
             buses = dss.CktElement.BusNames()
             fb = buses[0].split(".")[0].lower()
             tb = buses[1].split(".")[0].lower()
-            fbid = busname_to_id.get(fb,0)
-            tbid = busname_to_id.get(tb,0)
+            fbid = busname_to_id.get(fb, 0)
+            tbid = busname_to_id.get(tb, 0)
 
             st = 1 if dss.CktElement.Enabled() else 0
             xf.First()
@@ -564,76 +310,141 @@ def parse_opendss_to_mpc(dss_filename, baseMVA=1.0):
             ])
     mpc["xfmr3p"] = np.array(xfmr_data, dtype=float)
 
-    # loads
-    load_data = []
-    ld_counter=0
+    # --- loads (FIXED: keep original bus names + aggregate) ---
+    load_dict = {}         # bus_name -> [status, pA, pB, pC, qA, qB, qC]
+    load_order_names = []  # preserve insertion order of bus names we see
+
     for elem in all_elems:
         if not elem.lower().startswith("load."):
             continue
-        ld_counter+=1
+
         dss.Circuit.SetActiveElement(elem)
-        bus_full = dss.CktElement.BusNames()[0]
-        bus_only = bus_full.split(".")[0].lower()
-        bid = busname_to_id.get(bus_only, 0)
+        bus_full = dss.CktElement.BusNames()[0]             # e.g., "n4.1"
+        bus_only = bus_full.split(".")[0].lower().strip()   # e.g., "n4"
         st = 1 if dss.CktElement.Enabled() else 0
 
-        pA=pB=pC=0.0
-        qA=qB=qC=0.0
         powers = dss.CktElement.Powers()
+        nodes  = dss.CktElement.NodeOrder()
         n_cond = dss.CktElement.NumConductors()
-        nodes = dss.CktElement.NodeOrder()
 
+        pA = pB = pC = 0.0
+        qA = qB = qC = 0.0
         for i_cond in range(n_cond):
             p_cond = powers[2*i_cond]
             q_cond = powers[2*i_cond+1]
-            ph_node = nodes[i_cond] if i_cond<len(nodes) else 0
-            if ph_node==1:
-                pA+=p_cond; qA+=q_cond
-            elif ph_node==2:
-                pB+=p_cond; qB+=q_cond
-            elif ph_node==3:
-                pC+=p_cond; qC+=q_cond
-            else:
-                pass
+            ph_node = nodes[i_cond] if i_cond < len(nodes) else 0
+            if ph_node == 1: pA += p_cond; qA += q_cond
+            elif ph_node == 2: pB += p_cond; qB += q_cond
+            elif ph_node == 3: pC += p_cond; qC += q_cond
+
+        if bus_only not in load_dict:
+            load_dict[bus_only] = [st, pA, pB, pC, qA, qB, qC]
+            load_order_names.append(bus_only)
+        else:
+            old_st, o_pA, o_pB, o_pC, o_qA, o_qB, o_qC = load_dict[bus_only]
+            # "all enabled" semantics; change to (old_st or st) if you prefer "any"
+            new_st = 1 if (old_st == 1 and st == 1) else 0
+            load_dict[bus_only] = [
+                new_st,
+                o_pA + pA, o_pB + pB, o_pC + pC,
+                o_qA + qA, o_qB + qB, o_qC + qC,
+            ]
+
+    load_data = []
+    load_busnames = []  # parallel list to keep bus names for each row of load3p
+    ld_counter = 0
+    for bus_only in load_order_names:
+        ld_counter += 1
+        st, pA, pB, pC, qA, qB, qC = load_dict[bus_only]
+        bid = busname_to_id.get(bus_only, 0)   # may be 0 if name missing
+
         load_data.append([
-            ld_counter, bid, st,
+            ld_counter, float(bid), float(st),
+            float(pA), float(pB), float(pC),
+            float(qA), float(qB), float(qC)
+        ])
+        load_busnames.append(bus_only)
+
+    mpc["load3p"] = np.array(load_data, dtype=float)
+    mpc["load_busnames"] = load_busnames  # <-- NEW: keep original bus names
+
+    # gens
+    # --- gens ---
+    gen_data = []
+    gen_counter = 0
+    for elem in all_elems:
+        el = elem.lower()
+        if not (el.startswith("generator.") or el.startswith("vsource.")):
+            continue
+
+        gen_counter += 1
+        dss.Circuit.SetActiveElement(elem)
+
+        gn_bus = dss.CktElement.BusNames()[0].split(".")[0].lower()
+        bid = busname_to_id.get(gn_bus, 0)
+        st = 1 if dss.CktElement.Enabled() else 0
+
+        # default voltage setpoint (pu) for each phase
+        vgA = vgB = vgC = 1.0
+
+        if el.startswith("generator."):
+            dss.Generators.Name(elem.split(".", 1)[1])
+            pg = dss.Generators.kW()
+            qg = dss.Generators.kvar()
+            # assume balanced if not otherwise available
+            pA = pB = pC = (pg / 3.0)
+            qA = qB = qC = (qg / 3.0)
+        else:
+            # Vsource.* → compute actual injection from solved powers
+            # OpenDSS convention: +P is into the element. Generation is -P.
+            powers = dss.CktElement.Powers()  # [P1, Q1, P2, Q2, ...]
+            nodes = dss.CktElement.NodeOrder()  # [1,2,3,(N), ...]
+            n_cond = dss.CktElement.NumConductors()
+            n_term = dss.CktElement.NumTerminals()
+
+            # Accumulate per-phase across all terminals
+            pA = pB = pC = 0.0
+            qA = qB = qC = 0.0
+            # powers length = 2 * n_cond * n_term
+            for t in range(n_term):
+                for i_cond in range(n_cond):
+                    k = 2 * (t * n_cond + i_cond)
+                    P = powers[k]
+                    Q = powers[k + 1]
+                    ph = nodes[i_cond] if i_cond < len(nodes) else 0
+                    if ph == 1:
+                        pA += -P;
+                        qA += -Q
+                    elif ph == 2:
+                        pB += -P;
+                        qB += -Q
+                    elif ph == 3:
+                        pC += -P;
+                        qC += -Q
+                    # ignore neutral/ground
+
+            # Optional: use the Vsource setpoint as vg if you like
+            try:
+                dss.Vsources.Name(elem.split(".", 1)[1])
+                pu = dss.Vsources.pu()
+                vgA = vgB = vgC = float(pu) if pu else 1.0
+            except Exception:
+                pass
+
+        gen_data.append([
+            gen_counter, bid, st,
+            vgA, vgB, vgC,
             pA, pB, pC,
             qA, qB, qC
         ])
-    mpc["load3p"] = np.array(load_data, dtype=float)
 
-    # gens
-    gen_data=[]
-    gen_counter=0
-    for elem in all_elems:
-        if elem.lower().startswith("generator."):
-            gen_counter+=1
-            dss.Circuit.SetActiveElement(elem)
-            gn_bus = dss.CktElement.BusNames()[0].split(".")[0].lower()
-            bid = busname_to_id.get(gn_bus,0)
-            st = 1 if dss.CktElement.Enabled() else 0
-            dss.Generators.Name(elem.split(".",1)[1])
-            pg = dss.Generators.kW()
-            qg = dss.Generators.kvar()
-            vg = 1.0
-            # assume balanced
-            pgA=pg/3.0; pgB=pg/3.0; pgC=pg/3.0
-            qgA=qg/3.0; qgB=qg/3.0; qgC=qg/3.0
-            gen_data.append([
-                gen_counter, bid, st,
-                vg,vg,vg,
-                pgA,pgB,pgC,
-                qgA,qgB,qgC
-            ])
-    mpc["gen3p"]= np.array(gen_data, dtype=float)
+    mpc["gen3p"] = np.array(gen_data, dtype=float)
 
     # node_order from DSS (the original full circuit)
-    # might or might not be used later
     all_nodes = dss.Circuit.AllNodeNames()
     mpc["node_order"] = [nm.lower() for nm in all_nodes]
 
     return mpc
-
 
 def merge_closed_switches_in_mpc_and_dss(mpc, switch_threshold=1e-5):
     """
@@ -648,104 +459,116 @@ def merge_closed_switches_in_mpc_and_dss(mpc, switch_threshold=1e-5):
     the updated DSS circuit from which we'll build Y.
     """
     line_arr = mpc["line3p"]  # shape [N,7], columns: [line_id, fbus, tbus, status, lcid, length, line_name]
-    if line_arr.shape[1]<7:
+    if line_arr.shape[1] < 7:
         raise ValueError("mpc['line3p'] must have 7 columns: [line_id,fbus,tbus,status,lcid,length,line_name].")
 
     bus3p = mpc["bus3p"]
-    bus_ids = bus3p[:,0].astype(int).tolist()
+    bus_ids = bus3p[:, 0].astype(int).tolist()
 
-    parent={}
+    parent = {}
+
     def find(x):
-        if parent[x]!=x:
-            parent[x]=find(parent[x])
+        if parent[x] != x:
+            parent[x] = find(parent[x])
         return parent[x]
-    def union(a,b):
-        ra,rb=find(a),find(b)
-        if ra!=rb:
-            parent[rb]=ra
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
     for b in bus_ids:
-        parent[b]=b
+        parent[b] = b
 
     import opendssdirect as dss
     # unify & disable lines under threshold
     for row in line_arr:
         _, fb, tb, st, _, length_mi, ln_name = row
-        if st==1 and length_mi<switch_threshold:
+        if st == 1 and length_mi < switch_threshold:
             union(int(fb), int(tb))
             # disable in DSS
             dss.Lines.Name(ln_name)
             dss.Command(f"Edit line.{ln_name} enabled=no")
 
-    rep_map={}
+    rep_map = {}
     for b in bus_ids:
-        rep_map[b]=find(b)
+        rep_map[b] = find(b)
 
     # rewrite bus, line, xfmr, load, gen
     for row in bus3p:
-        old_id=int(row[0])
-        row[0]=rep_map[old_id]
+        old_id = int(row[0])
+        row[0] = rep_map[old_id]
     for row in line_arr:
-        row[1]=rep_map[int(row[1])]
-        row[2]=rep_map[int(row[2])]
+        row[1] = rep_map[int(row[1])]
+        row[2] = rep_map[int(row[2])]
     if "xfmr3p" in mpc:
         for row in mpc["xfmr3p"]:
-            row[1]=rep_map[int(row[1])]
-            row[2]=rep_map[int(row[2])]
+            row[1] = rep_map[int(row[1])]
+            row[2] = rep_map[int(row[2])]
     if "load3p" in mpc:
         for row in mpc["load3p"]:
-            row[1]=rep_map[int(row[1])]
+            row[1] = rep_map[int(row[1])]
     if "gen3p" in mpc:
         for row in mpc["gen3p"]:
-            row[1]=rep_map[int(row[1])]
+            row[1] = rep_map[int(row[1])]
 
-    # unify duplicates in bus3p
-    unique_rows={}
+    # unify duplicates in bus3p  (preserve highest type: 3 > 2 > 1)
+    from collections import defaultdict
+
+    rows_by_id = defaultdict(list)
     for row in bus3p:
-        bid=int(row[0])
-        if bid not in unique_rows:
-            unique_rows[bid]=row
-    new_bus_list=list(unique_rows.values())
-    new_bus_arr=np.array(new_bus_list,dtype=float)
-    new_bus_arr=new_bus_arr[new_bus_arr[:,0].argsort()]
+        rows_by_id[int(row[0])].append(row)
+
+    new_bus_list = []
+    for bid, rows in rows_by_id.items():
+        # pick the row with the highest bus type; if tie, first occurrence is fine
+        best = max(rows, key=lambda r: r[1])  # r[1] is bus_type
+        best = best.copy()
+        # ensure the stored type actually reflects the max (in case of ties)
+        best[1] = max(r[1] for r in rows)
+        best[0] = bid
+        new_bus_list.append(best)
+
+    new_bus_arr = np.array(new_bus_list, dtype=float)
+    new_bus_arr = new_bus_arr[new_bus_arr[:, 0].argsort()]
     mpc["bus3p"] = new_bus_arr
 
     # reassign bus IDs => 1..N
-    old_ids = new_bus_arr[:,0].astype(int)
-    new_id_map={}
-    for i,oid in enumerate(old_ids, start=1):
-        new_id_map[oid]=i
+    old_ids = new_bus_arr[:, 0].astype(int)
+    new_id_map = {}
+    for i, oid in enumerate(old_ids, start=1):
+        new_id_map[oid] = i
 
     for row in mpc["bus3p"]:
-        row[0]=new_id_map[int(row[0])]
+        row[0] = new_id_map[int(row[0])]
     for row in line_arr:
-        row[1]=new_id_map[int(row[1])]
-        row[2]=new_id_map[int(row[2])]
+        row[1] = new_id_map[int(row[1])]
+        row[2] = new_id_map[int(row[2])]
     if "xfmr3p" in mpc:
         for row in mpc["xfmr3p"]:
-            row[1]=new_id_map[int(row[1])]
-            row[2]=new_id_map[int(row[2])]
+            row[1] = new_id_map[int(row[1])]
+            row[2] = new_id_map[int(row[2])]
     if "load3p" in mpc:
         for row in mpc["load3p"]:
-            row[1]=new_id_map[int(row[1])]
+            row[1] = new_id_map[int(row[1])]
     if "gen3p" in mpc:
         for row in mpc["gen3p"]:
-            row[1]=new_id_map[int(row[1])]
+            row[1] = new_id_map[int(row[1])]
 
     # remove lines that self-loop
-    new_lines=[]
+    new_lines = []
     for row in line_arr:
-        if row[1]==row[2]:
-            row[3]=0
+        if row[1] == row[2]:
+            row[3] = 0
             # skip
         else:
             new_lines.append(row)
-    mpc["line3p"] = np.array(new_lines,dtype=object)
+    mpc["line3p"] = np.array(new_lines, dtype=object)
 
     # ------ Now update mpc["busname_to_id"] so old bus names point to final IDs ------
-    old_dict = mpc["busname_to_id"]  # e.g. { "p2":2, "p3":3, ... }
+    old_dict = mpc["busname_to_id"]
     new_dict = {}
     for bus_nm, old_id in old_dict.items():
-        # find rep => final => new
         rep_id = rep_map.get(old_id, old_id)
         final_id = new_id_map.get(rep_id, 0)
         new_dict[bus_nm] = final_id
@@ -753,9 +576,10 @@ def merge_closed_switches_in_mpc_and_dss(mpc, switch_threshold=1e-5):
 
     print("merge_closed_switches_in_mpc_and_dss: done merging & disabling near-zero lines.")
     merge_parallel_transmission_lines_in_mpc(mpc)
+    _remap_load_busids_by_busname(mpc)
+    _reindex_and_merge_loads(mpc, status_agg="all")  # or "any"
 
-
-def build_global_y_per_unit(mpc, dss_filename):
+def build_global_y_per_unit(mpc):
     """
     Build the global Y matrix in per-unit for the *merged* system.
     We iterate over the *original* DSS circuit lines/xfmrs, but map each bus name
@@ -938,6 +762,69 @@ def build_global_y_per_unit(mpc, dss_filename):
     Y_pu = (1.0/S_base)*Ytemp
 
     return Y_pu, node_order_list
+
+def _remap_load_busids_by_busname(mpc):
+    """
+    Use the final mpc['busname_to_id'] to re-attach each load to the correct
+    merged bus. This fixes loads that were on 'diminished' nodes after merges.
+    """
+    if "load3p" not in mpc or "load_busnames" not in mpc:
+        return
+    loads = mpc["load3p"]
+    names = mpc["load_busnames"]
+    if loads is None or names is None:
+        return
+
+    name_to_id = mpc.get("busname_to_id", {})
+    n = min(len(loads), len(names))
+    for i in range(n):
+        nm = str(names[i]).lower()
+        final_id = int(name_to_id.get(nm, 0))
+        loads[i][1] = float(final_id)   # column 1 is bus_id (float dtype is fine)
+def _reindex_and_merge_loads(mpc, status_agg="all"):
+    """
+    Re-aggregate loads by final bus_id and re-index them 1..N.
+    status_agg: "all" (default) or "any".
+    """
+    if "load3p" not in mpc or mpc["load3p"] is None or len(mpc["load3p"]) == 0:
+        return
+
+    loads = mpc["load3p"]
+    if loads.shape[1] < 9:
+        raise ValueError("mpc['load3p'] must have 9 columns: [id,bus_id,status,pA,pB,pC,qA,qB,qC].")
+
+    grouped = {}
+    for row in loads:
+        bus_id = int(row[1])
+        if bus_id <= 0:
+            # orphaned => skip (or map somewhere else if you prefer)
+            continue
+        st = int(row[2])
+        pA, pB, pC, qA, qB, qC = (float(row[3]), float(row[4]), float(row[5]),
+                                   float(row[6]), float(row[7]), float(row[8]))
+        if bus_id not in grouped:
+            grouped[bus_id] = {"st": st, "pA": pA, "pB": pB, "pC": pC, "qA": qA, "qB": qB, "qC": qC}
+        else:
+            g = grouped[bus_id]
+            if status_agg.lower() == "any":
+                g["st"] = 1 if (g["st"] == 1 or st == 1) else 0
+            else:
+                g["st"] = 1 if (g["st"] == 1 and st == 1) else 0
+            g["pA"] += pA; g["pB"] += pB; g["pC"] += pC
+            g["qA"] += qA; g["qB"] += qB; g["qC"] += qC
+
+    new_rows = []
+    new_id = 1
+    for bus_id in sorted(grouped.keys()):
+        g = grouped[bus_id]
+        new_rows.append([
+            float(new_id), float(bus_id), float(g["st"]),
+            g["pA"], g["pB"], g["pC"], g["qA"], g["qB"], g["qC"]
+        ])
+        new_id += 1
+
+    mpc["load3p"] = np.array(new_rows, dtype=float)
+
 def merge_parallel_transmission_lines_in_mpc(mpc):
     """
     Detects multiple parallel lines in mpc["line3p"] that have the same
@@ -1044,19 +931,3 @@ def merge_parallel_transmission_lines_in_mpc(mpc):
     mpc["line3p"] = final_arr
 
     print("merge_parallel_transmission_lines_in_mpc: finished merging parallel lines.\n")
-
-def main():
-    dss_filename="Master.DSS"
-
-    # 1) parse
-    mpc = parse_opendss_to_mpc(dss_filename, baseMVA=1.0)
-    # 2) merges
-    merge_closed_switches_in_mpc_and_dss(mpc, switch_threshold=2)
-    # 3) build Y
-    Y_pu, node_ord = build_global_y_per_unit(mpc, dss_filename)
-    print("Final Y shape:", Y_pu.shape)
-    print("Node order:", node_ord)
-
-
-if __name__=="__main__":
-    main()

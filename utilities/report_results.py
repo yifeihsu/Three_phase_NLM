@@ -6,17 +6,17 @@ def report_results(Vr, Vi, busphase_map, mpc):
     """
     bus3p = mpc["bus3p"]
     load3p = mpc["load3p"]
-    gen3p  = mpc["gen3p"]
+    # gen3p  = mpc["gen3p"]
     line3p = mpc["line3p"]
     xfmr3p = mpc["xfmr3p"]
 
     # System summary
     # Counting on/off
     bus_on = len(bus3p)
-    gen_on = np.sum(gen3p[:,2] == 1)
+    # gen_on = np.sum(gen3p[:,2] == 1)
     load_on = np.sum(load3p[:,2] == 1)
     line_on = np.sum(line3p[:,3] == 1)
-    xfmr_on = np.sum(xfmr3p[:,3] == 1)
+    # xfmr_on = np.sum(xfmr3p[:,3] == 1)
 
     print("================================================================================")
     print("|     System Summary                                                           |")
@@ -24,10 +24,10 @@ def report_results(Vr, Vi, busphase_map, mpc):
     print("  elements                on     off    total")
     print(" --------------------- ------- ------- -------")
     print(f"  3-ph Buses           {bus_on:7d}       - {bus_on:7d}")
-    print(f"  3-ph Generators      {gen_on:7d}       - {gen3p.shape[0]:7d}")
+    # print(f"  3-ph Generators      {gen_on:7d}       - {gen3p.shape[0]:7d}")
     print(f"  3-ph Loads           {load_on:7d}       - {load3p.shape[0]:7d}")
     print(f"  3-ph Lines           {line_on:7d}       - {line3p.shape[0]:7d}")
-    print(f"  3-ph Transformers    {xfmr_on:7d}       - {xfmr3p.shape[0]:7d}")
+    # print(f"  3-ph Transformers    {xfmr_on:7d}       - {xfmr3p.shape[0]:7d}")
     print("")
 
     # For brevity, skip the exact total line losses & transformer losses
