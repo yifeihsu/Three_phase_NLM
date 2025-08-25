@@ -44,18 +44,17 @@ New Linecode.Kersting nphases=3  Units=mi
 ~ Xmatrix=[1.07805  |0.501679  1.04818  |0.384938  0.423653  1.06507  ]
 ~ Cmatrix=[15.0675  |-4.86254  15.8754  |-1.85328  -3.09107  14.3258  ]
 
-! Edit line.line1 Linecode=Kersting
-Edit line.line2 Linecode=Kersting
+! Edit line.1 Linecode=Kersting
+! Edit line.2 Linecode=Kersting
 
 
 ! ------------- Mid‑span HIF auto‑generated block -----------
 Edit line.2 enabled=no
 New line.2_a bus1=n3 bus2=FaultBus length=1250.0000 units=ft geometry=4wire 
 New line.2_b bus1=FaultBus bus2=n4 length=1250.0000 units=ft geometry=4wire 
-New Load.HIF_Load Bus1=FaultBus.1 Phases=1 Conn=Wye Model=1 kW=0 kvar=0
+New Load.HIF_Load Bus1=FaultBus.1 Phases=1 Conn=Wye Model=2 kW=38.4569 kvar=0 kV=2.402
 ! -----------------------------------------------------------
 
 set voltagebases=[12.47, 4.16] 
 calcvoltagebases     ! **** let DSS compute voltage bases
 solve
-
