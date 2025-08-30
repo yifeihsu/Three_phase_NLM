@@ -40,7 +40,6 @@ def reorder_measurements_to_map(z, src_map, dst_map, fill_v=1.0):
 
     return np.concatenate([P_dst, Q_dst, V_dst])
 
-
 def build_mpc_with_measured_injections(mpc_base, busphase_map, P_meas_by_key, Q_meas_by_key):
     """
     Return a deep-copied MPC whose per-(bus,phase) net injections equal measured values.
@@ -82,7 +81,6 @@ def build_mpc_with_measured_injections(mpc_base, busphase_map, P_meas_by_key, Q_
     mpc_pf["load3p"] = load3p_pf
     mpc_pf["gen3p"]  = gen3p_pf
     return mpc_pf
-
 
 def remap_by_busphase_map(vec_src, map_src, map_dst):
     """

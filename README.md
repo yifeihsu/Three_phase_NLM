@@ -42,12 +42,14 @@ $$
 \mathcal{L}(x,\lambda) = J(x) + \lambda^T g(x)
 $$
 
+
 The sensitivity of each constraint is evaluated through normalized Lagrangian
 multipliers
 
 $$
 \tilde{\lambda}_i = \frac{\lambda_i}{\sqrt{\operatorname{Var}(\lambda_i)}}
 $$
+
 
 For a group of related constraints, the Mahalanobis-distance based index is
 computed as
@@ -59,6 +61,7 @@ $$
 
 where $\tilde{\boldsymbol{\lambda}}_g$ collects the normalized multipliers for
 group $g$ and $\Sigma_g$ is their covariance matrix.  High values of $D_g$
+
 indicate anomalous behavior in the corresponding parameter set.
 
 ## Getting started
