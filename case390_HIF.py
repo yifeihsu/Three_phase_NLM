@@ -12,13 +12,13 @@ from lagrangian_m import run_lagrangian_polar
 from utilities.report_results import report_results
 
 # Constants for the case
-PRISTINE_DSS = "Master.DSS"
-FAULT_DSS = "Master_HIF.dss"
-TARGET_LINE = "Line.280"  # split this one
+PRISTINE_DSS = "Secondary_Equivalent.dss"
+FAULT_DSS = "Secondary_Equivalent_HIF.dss"
+TARGET_LINE = "Line.156"  # split this one
 FAULT_BUS = "FaultBus"
-R_HIF = 1  # ohms line‑to‑neutral (≈ 0.5A @2.4kV)
-SWITCH_THRES = 2  # Ω threshold to merge DSS switches
-STD_P, STD_Q, STD_V = 1e-4, 1e-4, 1e-5
+R_HIF = 1
+SWITCH_THRES = 2
+STD_P, STD_Q, STD_V = 1e-5, 1e-5, 1e-5
 
 
 def add_kw_for_constant_resistance(dss_file: str, r_ohm: float, fault_bus: str):
@@ -41,16 +41,16 @@ def main():
 
     # 2) Parse pristine and faulted circuits
     mpc_orig = parse_opendss_to_mpc(PRISTINE_DSS, baseMVA=1.0, lc_filename="LineConstantsCode.txt",
-                                    slack_bus="p1")
+                                    slack_bus="s148")
     merge_closed_switches_in_mpc_and_dss(mpc_orig, SWITCH_THRES)
     mpc_fault = parse_opendss_to_mpc(FAULT_DSS, baseMVA=1.0, lc_filename="LineConstantsCode.txt",
-                                     slack_bus="p1")
+                                     slack_bus="s148")
     merge_closed_switches_in_mpc_and_dss(mpc_fault, SWITCH_THRES)
 
     # 3) Run PF on the faulted network to get "true" faulted voltages
     Vr, Vi, bp_full = run_newton_powerflow_3p(mpc_fault, 1e-6, 20)
     Vc_full = Vr + 1j * Vi
-    report_results(Vr, Vi, bp_full, mpc_fault)
+    # report_results(Vr, Vi, bp_full, mpc_fault)
 
     # 4) Build the full Y-Bus for the faulted network
     dss.Command("Clear")
@@ -85,7 +85,7 @@ def main():
     # Add noise to measurements (P, Q, and V)
     R = np.diag([STD_P ** 2] * len(bp_red) + [STD_Q ** 2] * len(bp_red) + [STD_V ** 2] * len(bp_red))
     z_noisy = z + np.random.normal(0.0, np.sqrt(np.diag(R)), size=len(z))
-
+    # z_noisy = z
     # 6) Run state estimation using the PRISTINE model
     dss.Command("Clear")
     dss.Command(f'Redirect "{PRISTINE_DSS}"')

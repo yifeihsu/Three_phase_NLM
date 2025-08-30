@@ -101,7 +101,6 @@ def _compute_param_injection_partial(
 
     return dh
 
-
 def jacobian_line_params(x, Ybus, mpc, busphase_map):
     """
     Sparse Jacobian of size (3·N, n_params) where n_params = 12·n_lines
