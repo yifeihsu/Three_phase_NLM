@@ -1,3 +1,4 @@
+import os
 import numpy as np
 from opendssdirect import dss
 from lagrangian_m import run_lagrangian_polar
@@ -6,6 +7,7 @@ from cal_pf import run_newton_powerflow_3p
 from parse_opendss_file import parse_opendss_to_mpc
 from parse_opendss_file import build_global_y_per_unit, merge_closed_switches_in_mpc_and_dss
 from copy import deepcopy  # NEW
+from config import DATA_DIR
 
 
 def reorder_measurements_to_map(z, src_map, dst_map, fill_v=1.0):
@@ -122,8 +124,8 @@ def main():
        identifying the location of the modeling error.
     """
     np.random.seed(42)
-    dss_filename = "Secondary_Equivalent.dss"
-    dss_filename_ft = "Secondary_Equivalent_ft.dss"
+    dss_filename = os.fspath(DATA_DIR / "Secondary_Equivalent.dss")
+    dss_filename_ft = os.fspath(DATA_DIR / "Secondary_Equivalent_ft.dss")
     baseMVA = 1.0
     slack_bus = "s148"
 
@@ -137,7 +139,11 @@ def main():
 
     print("Parsing the 'true' (burnt-out) model from OpenDSS...")
 
-    mpc_true = parse_opendss_to_mpc(dss_filename_ft, baseMVA=baseMVA, slack_bus=slack_bus)
+    mpc_true = parse_opendss_to_mpc(
+        dss_filename_ft, baseMVA=baseMVA,
+        lc_filename=os.fspath(DATA_DIR / "LineConstantsCode.txt"),
+        slack_bus=slack_bus,
+    )
     merge_closed_switches_in_mpc_and_dss(mpc_true, switch_threshold=2)
 
     Vr_true, Vi_true, busphase_map_true = run_newton_powerflow_3p(mpc_true, tol=1e-6, max_iter=20)
@@ -173,7 +179,11 @@ def main():
     # Re-compile the original master file to get the model WITHOUT the burn-out
     # This represents the model the operator believes to be correct.
     dss.Command("Clear")
-    mpc_assumed = parse_opendss_to_mpc(dss_filename, baseMVA=baseMVA, slack_bus=slack_bus)
+    mpc_assumed = parse_opendss_to_mpc(
+        dss_filename, baseMVA=baseMVA,
+        lc_filename=os.fspath(DATA_DIR / "LineConstantsCode.txt"),
+        slack_bus=slack_bus,
+    )
     merge_closed_switches_in_mpc_and_dss(mpc_assumed, switch_threshold=2)
 
     # Build the admittance matrix for this assumed-correct model

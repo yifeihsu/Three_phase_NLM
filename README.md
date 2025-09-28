@@ -67,12 +67,39 @@ indicate anomalous behavior in the corresponding parameter set.
 ## Getting started
 
 1. Install dependencies (Python 3.9+, `opendssdirect.py`).
-2. Run an example study from the `src` directory:
+2. Run an example study from the repo root (paths are resolved automatically):
    ```bash
-   python case_4.py   # IEEE 4-node test system
-   python case_390.py # IEEE 342-node low-voltage network
+   python src/case_4.py   # IEEE 4-node test system
+   python src/case_390.py # IEEE 342-node low-voltage network
    ```
 
 These scripts perform a three-phase power flow, execute the state estimator, and
 compute grouped indices for constraint monitoring.
+
+## Paths and config
+
+- Centralized path configuration lives in `src/config.py`.
+  - `DATA_DIR` points to the repo’s `data/` folder.
+  - `RESULTS_DIR` points to the repo’s `results/` folder.
+  - Helpers `data_file(name)` and `result_file(name)` build absolute paths.
+
+- Example usage in code: `os.fspath(DATA_DIR / "Master.dss")`
+  - `DATA_DIR / "Master.dss"` uses `pathlib` to form the path object.
+  - `os.fspath(...)` converts that path object to a plain string, which many
+    libraries (like OpenDSSDirect) expect.
+
+- If your data lives elsewhere, edit `src/config.py` (or override at runtime)
+  and all scripts will pick it up without further edits.
+
+## Visualization
+
+To render a simple network overview from the OpenDSS model and save an image:
+
+```bash
+python src/vis/visualization.py
+```
+
+The script compiles `data/Master.dss`, builds a graph (buses + lines/transformers),
+colors buses by voltage category (HV/MV/SN/LV), highlights bridging nodes, and
+saves `results/vis_overview.png`.
 

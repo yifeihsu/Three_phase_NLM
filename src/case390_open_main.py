@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import time
 import copy
@@ -6,6 +7,7 @@ from lagrangian_m import run_lagrangian_polar
 from utilities.mea_fun import measurement_function
 from cal_pf import run_newton_powerflow_3p
 from parse_opendss_file import parse_opendss_to_mpc, build_global_y_per_unit, merge_closed_switches_in_mpc_and_dss
+from config import DATA_DIR
 
 # --- Define MPC constants for clarity ---
 # See MATPOWER documentation for column definitions
@@ -19,15 +21,19 @@ def main():
     estimator to detect the anomaly, and then uses the true fault model to
     verify that the anomaly disappears when the correct model is used.
     """
-    dss_filename = "Master.DSS"
-    dss_filename_ft = "Master_Circuit.dss"
+    dss_filename = os.fspath(DATA_DIR / "Master.dss")
+    dss_filename_ft = os.fspath(DATA_DIR / "Master_Circuit.dss")
     baseMVA = 1.0
     slack_bus = "p1"
 
     # --- 1) SIMULATE REALITY: OPEN MAIN FAULT AND POWER FLOW ---
     print("--- Step 1: Simulating the true system with an open main fault ---")
     print("Parsing the 'true' (faulted) model from OpenDSS...")
-    mpc_true = parse_opendss_to_mpc(dss_filename_ft, baseMVA=baseMVA, slack_bus=slack_bus)
+    mpc_true = parse_opendss_to_mpc(
+        dss_filename_ft, baseMVA=baseMVA,
+        lc_filename=os.fspath(DATA_DIR / "LineConstantsCode.txt"),
+        slack_bus=slack_bus,
+    )
     merge_closed_switches_in_mpc_and_dss(mpc_true, switch_threshold=2)
 
     Vr_true, Vi_true, busphase_map_true = run_newton_powerflow_3p(mpc_true, tol=1e-6, max_iter=20)
@@ -64,7 +70,11 @@ def main():
     print("\n--- Step 3: Setting up the assumed-correct (unmodified) model for estimation ---")
 
     dss.Command("clear")
-    mpc_assumed = parse_opendss_to_mpc(dss_filename, baseMVA=baseMVA, slack_bus=slack_bus)
+    mpc_assumed = parse_opendss_to_mpc(
+        dss_filename, baseMVA=baseMVA,
+        lc_filename=os.fspath(DATA_DIR / "LineConstantsCode.txt"),
+        slack_bus=slack_bus,
+    )
     merge_closed_switches_in_mpc_and_dss(mpc_assumed, switch_threshold=2)
 
     Y_pu_assumed, _ = build_global_y_per_unit(mpc_assumed)

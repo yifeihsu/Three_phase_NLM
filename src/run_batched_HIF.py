@@ -14,12 +14,13 @@ from parse_opendss_file import (
 from cal_pf import run_newton_powerflow_3p
 from utilities.mea_fun import measurement_function
 from lagrangian_m import run_lagrangian_polar
+from config import DATA_DIR, SRC_DIR
 
 # ------------------------------------------------------------------
 # User-tunable constants
 # ------------------------------------------------------------------
-PRISTINE_DSS = "Secondary_Equivalent.dss"
-WORKDIR = "hif_batch_tmp"
+PRISTINE_DSS = os.fspath(DATA_DIR / "Secondary_Equivalent.dss")
+WORKDIR = os.fspath(SRC_DIR / "hif_batch_tmp")
 SWITCH_THRES = 2
 R_HIF = 1
 FAULT_BUS = "FaultBus"
@@ -213,11 +214,13 @@ def run_one_target(pristine_master: str,
 
     # -- Parse pristine & faulted and merge closed switches
     mpc_orig = parse_opendss_to_mpc(pristine_master, baseMVA=1.0,
-                                    lc_filename="LineConstantsCode.txt", slack_bus="s148")
+                                    lc_filename=os.fspath(DATA_DIR / "LineConstantsCode.txt"),
+                                    slack_bus="s148")
     merge_closed_switches_in_mpc_and_dss(mpc_orig, SWITCH_THRES)
 
     mpc_fault = parse_opendss_to_mpc(fault_master, baseMVA=1.0,
-                                     lc_filename="LineConstantsCode.txt", slack_bus="s148")
+                                     lc_filename=os.fspath(DATA_DIR / "LineConstantsCode.txt"),
+                                     slack_bus="s148")
     merge_closed_switches_in_mpc_and_dss(mpc_fault, SWITCH_THRES)
 
     # -- PF on faulted to get "truth" voltages

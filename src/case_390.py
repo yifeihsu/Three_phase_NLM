@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import time
 from opendssdirect import dss
@@ -8,11 +9,16 @@ from cal_pf import run_newton_powerflow_3p
 from parse_opendss_file import parse_opendss_to_mpc
 from report_results import report_results
 from parse_opendss_file import build_global_y_per_unit, merge_closed_switches_in_mpc_and_dss
+from config import DATA_DIR
 
 def main():
     # 1) Load the data from OpenDSS, func parse_opendss_to_mpc will solve the circuit
-    dss_filename = "Master.DSS"
-    mpc = parse_opendss_to_mpc(dss_filename, baseMVA=1.0, slack_bus="p1")
+    dss_filename = os.fspath(DATA_DIR / "Master.dss")
+    mpc = parse_opendss_to_mpc(
+        dss_filename, baseMVA=1.0,
+        lc_filename=os.fspath(DATA_DIR / "LineConstantsCode.txt"),
+        slack_bus="p1",
+    )
     # 2) merges and Run Newton PF
     merge_closed_switches_in_mpc_and_dss(mpc, switch_threshold=2) ### Be careful with the switch threshold
     Vr, Vi, busphase_map = run_newton_powerflow_3p(mpc, tol=1e-6, max_iter=20)
@@ -39,7 +45,7 @@ def main():
 
     # NLM Test for different lines
     # Test for 342 bus Case
-    # dss.Command('Redirect "Master.DSS"')
+    # dss.Command(f'Redirect "{dss_filename}"')
     # dss.Text.Command("New LineCode.NLM nphases=3 units=mi")
     # dss.Text.Command("~ Rmatrix=[0.33619  |0.128579  1.328163  |0.132719  2.128579  0.33619]")
     # dss.Text.Command("~ Xmatrix=[0.710307  |0.168686  0.775146  |0.193614  0.268686  0.510307]")
@@ -53,7 +59,7 @@ def main():
     # dss.Solution.Solve()
 
     # For primary network
-    dss.Command('Redirect "Master.DSS"')
+    dss.Command(f'Redirect "{dss_filename}"')
     dss.Text.Command("New LineCode.NLM nphases=3 units=mi")
     dss.Text.Command("~ Rmatrix = [0.13018  |-4.14314E-006  0.130177  |-8.11898E-006  -4.14314E-006  0.13018]")
     dss.Text.Command("~ Xmatrix = [0.0668195  |-0.000224891  2.8703539  |-4.2835E-005  -0.000224891  6.13821694]")

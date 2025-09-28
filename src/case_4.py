@@ -10,9 +10,10 @@ from cal_pf import run_newton_powerflow_3p
 from utilities.mea_fun import measurement_function
 from lagrangian_m import run_lagrangian_polar
 from utilities.report_results import report_results
+from config import DATA_DIR, RESULTS_DIR
 
-PRISTINE_DSS = "4Bus-YY-Bal.DSS"
-FAULT_DSS    = "4Bus-YY-Bal_HIF.dss"
+PRISTINE_DSS = os.fspath(DATA_DIR / "4Bus-YY-Bal.DSS")
+FAULT_DSS    = os.fspath(RESULTS_DIR / "4Bus-YY-Bal_HIF.dss")
 TARGET_LINE  = "line.2"              # split this one
 FAULT_BUS    = "FaultBus"
 R_HIF        = 150.0               # ohms line‑to‑neutral (≈ 0.5A @2.4kV)
@@ -32,13 +33,16 @@ def add_kw_for_constant_resistance(dss_file: str, r_ohm: float, fault_bus: str):
 
 def main():
     # 1) create a DSS file with a constant‑R HIF
+    os.makedirs(RESULTS_DIR, exist_ok=True)
     make_midspan_hif_dss(PRISTINE_DSS, FAULT_DSS, TARGET_LINE)
     add_kw_for_constant_resistance(FAULT_DSS, R_HIF, FAULT_BUS)
 
     # 2) parse pristine and faulted circuits
-    mpc_orig = parse_opendss_to_mpc(PRISTINE_DSS, baseMVA=1.0, lc_filename="LineConstantsCode4.txt",
+    mpc_orig = parse_opendss_to_mpc(PRISTINE_DSS, baseMVA=1.0,
+                                    lc_filename=os.fspath(DATA_DIR / "LineConstantsCode4.txt"),
                                     slack_bus="sourcebus")
-    mpc_fault = parse_opendss_to_mpc(FAULT_DSS, baseMVA=1.0, lc_filename="LineConstantsCode4.txt",
+    mpc_fault = parse_opendss_to_mpc(FAULT_DSS, baseMVA=1.0,
+                                     lc_filename=os.fspath(DATA_DIR / "LineConstantsCode4.txt"),
                                      slack_bus="sourcebus")
     merge_closed_switches_in_mpc_and_dss(mpc_fault, SWITCH_THRES)
 

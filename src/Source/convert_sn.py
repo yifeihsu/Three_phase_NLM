@@ -211,7 +211,9 @@ New Linecode.sec6 nphases=3  Units=mi
     print (' ', file=op)
     print ('Set Voltagebases=[230, 13.8, 0.48, 0.208]', file=op)
     print ('calcv', file=op)
-    print ('buscoords buscoords.dat', file=op)
+    from config import DATA_DIR
+    import os
+    print (f'buscoords {os.fspath(DATA_DIR / "buscoords.dat")}', file=op)
     print ('solve', file=op)
     op.close()
 

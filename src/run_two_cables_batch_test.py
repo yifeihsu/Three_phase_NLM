@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import re
 import time
@@ -9,6 +10,7 @@ from lagrangian_m import run_lagrangian_polar
 from utilities.mea_fun import measurement_function
 from cal_pf import run_newton_powerflow_3p
 from parse_opendss_file import parse_opendss_to_mpc, build_global_y_per_unit, merge_closed_switches_in_mpc_and_dss
+from config import DATA_DIR
 
 
 def create_faulted_dss_file(original_dss_path, lines_to_burn_out, temp_dss_path):
@@ -82,7 +84,11 @@ def run_burnout_scenario_test(dss_filename, lines_to_burn_out, true_base_name, m
                 f"    - WARNING: Power flow for reality with {lines_to_burn_out} burnt-out did not converge. Skipping test.")
             return None
 
-        mpc_true = parse_opendss_to_mpc(temp_dss_filename, baseMVA=baseMVA, slack_bus=slack_bus)
+        mpc_true = parse_opendss_to_mpc(
+            temp_dss_filename, baseMVA=baseMVA,
+            lc_filename=os.fspath(DATA_DIR / "LineConstantsCode.txt"),
+            slack_bus=slack_bus,
+        )
         merge_closed_switches_in_mpc_and_dss(mpc_true, switch_threshold=2)
         Vr_true, Vi_true, busphase_map_true = run_newton_powerflow_3p(mpc_true, tol=1e-6, max_iter=20)
         x_f_true = Vr_true + 1j * Vi_true
@@ -140,7 +146,7 @@ def main():
     """
     Main function to orchestrate the two-cable simultaneous burnout analysis.
     """
-    dss_filename = "Master.DSS"
+    dss_filename = os.fspath(DATA_DIR / "Master.dss")
     baseMVA = 1.0
     slack_bus = "p1"
 
@@ -158,7 +164,11 @@ def main():
         f"Found {len(eligible_groups)} groups with 3 or more parallel cables, eligible for two-cable burnout testing.")
 
     print("\n--- Step 2: Preparing the 'assumed-correct' base model ---")
-    mpc_assumed = parse_opendss_to_mpc(dss_filename, baseMVA=baseMVA, slack_bus=slack_bus)
+    mpc_assumed = parse_opendss_to_mpc(
+        dss_filename, baseMVA=baseMVA,
+        lc_filename=os.fspath(DATA_DIR / "LineConstantsCode.txt"),
+        slack_bus=slack_bus,
+    )
     merge_closed_switches_in_mpc_and_dss(mpc_assumed, switch_threshold=2)
     Vr_assumed, Vi_assumed, busphase_map_assumed = run_newton_powerflow_3p(mpc_assumed, tol=1e-6, max_iter=20)
     x_f_assumed = Vr_assumed + 1j * Vi_assumed

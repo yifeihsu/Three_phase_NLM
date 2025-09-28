@@ -1,4 +1,5 @@
 import math
+import os
 import numpy as np
 from opendssdirect import dss
 from midspan_hif_utils import make_midspan_hif_dss, kron_reduce
@@ -10,10 +11,11 @@ from cal_pf import run_newton_powerflow_3p
 from utilities.mea_fun import measurement_function
 from lagrangian_m import run_lagrangian_polar
 from utilities.report_results import report_results
+from config import DATA_DIR, RESULTS_DIR
 
 # Constants for the case
-PRISTINE_DSS = "Secondary_Equivalent.dss"
-FAULT_DSS = "Secondary_Equivalent_HIF.dss"
+PRISTINE_DSS = os.fspath(DATA_DIR / "Secondary_Equivalent.dss")
+FAULT_DSS = os.fspath(RESULTS_DIR / "Secondary_Equivalent_HIF.dss")
 TARGET_LINE = "Line.156"  # split this one
 FAULT_BUS = "FaultBus"
 R_HIF = 1
@@ -36,14 +38,17 @@ def add_kw_for_constant_resistance(dss_file: str, r_ohm: float, fault_bus: str):
 
 def main():
     # 1) Create a DSS file with a constant-R HIF
+    os.makedirs(RESULTS_DIR, exist_ok=True)
     make_midspan_hif_dss(PRISTINE_DSS, FAULT_DSS, TARGET_LINE)
     add_kw_for_constant_resistance(FAULT_DSS, R_HIF, FAULT_BUS)
 
     # 2) Parse pristine and faulted circuits
-    mpc_orig = parse_opendss_to_mpc(PRISTINE_DSS, baseMVA=1.0, lc_filename="LineConstantsCode.txt",
+    mpc_orig = parse_opendss_to_mpc(PRISTINE_DSS, baseMVA=1.0,
+                                    lc_filename=os.fspath(DATA_DIR / "LineConstantsCode.txt"),
                                     slack_bus="s148")
     merge_closed_switches_in_mpc_and_dss(mpc_orig, SWITCH_THRES)
-    mpc_fault = parse_opendss_to_mpc(FAULT_DSS, baseMVA=1.0, lc_filename="LineConstantsCode.txt",
+    mpc_fault = parse_opendss_to_mpc(FAULT_DSS, baseMVA=1.0,
+                                     lc_filename=os.fspath(DATA_DIR / "LineConstantsCode.txt"),
                                      slack_bus="s148")
     merge_closed_switches_in_mpc_and_dss(mpc_fault, SWITCH_THRES)
 

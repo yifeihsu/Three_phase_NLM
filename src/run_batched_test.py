@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import re
 import time
@@ -8,6 +9,7 @@ from utilities.mea_fun import measurement_function
 from cal_pf import run_newton_powerflow_3p
 from parse_opendss_file import parse_opendss_to_mpc, build_global_y_per_unit, merge_closed_switches_in_mpc_and_dss
 from copy import deepcopy  # NEW
+from config import DATA_DIR
 
 
 def reorder_measurements_to_map(z, src_map, dst_map, fill_v=1.0):
@@ -172,7 +174,11 @@ def run_single_burnout_test(dss_filename, line_to_burn_out, true_base_name, mpc_
             return None
 
         # Now parse the state from the faulted file
-        mpc_true = parse_opendss_to_mpc(temp_dss_filename, baseMVA=baseMVA, slack_bus=slack_bus)
+        mpc_true = parse_opendss_to_mpc(
+            temp_dss_filename, baseMVA=baseMVA,
+            lc_filename=os.fspath(DATA_DIR / "LineConstantsCode.txt"),
+            slack_bus=slack_bus,
+        )
 
         # The merge function also modifies the live DSS object, which is fine here.
         merge_closed_switches_in_mpc_and_dss(mpc_true, switch_threshold=2)
@@ -270,7 +276,7 @@ def run_single_burnout_test(dss_filename, line_to_burn_out, true_base_name, mpc_
 
 def main():
     np.random.seed(42)
-    dss_filename = "Secondary_Equivalent.dss"
+    dss_filename = os.fspath(DATA_DIR / "Secondary_Equivalent.dss")
     baseMVA = 1.0
     slack_bus = "s148"
 
@@ -282,7 +288,11 @@ def main():
     print(f"Found {len(parallel_line_groups)} groups of parallel lines to be tested.")
 
     print("\n--- Step 2: Preparing the 'assumed-correct' base model ---")
-    mpc_assumed = parse_opendss_to_mpc(dss_filename, baseMVA=baseMVA, slack_bus=slack_bus)
+    mpc_assumed = parse_opendss_to_mpc(
+        dss_filename, baseMVA=baseMVA,
+        lc_filename=os.fspath(DATA_DIR / "LineConstantsCode.txt"),
+        slack_bus=slack_bus,
+    )
     merge_closed_switches_in_mpc_and_dss(mpc_assumed, switch_threshold=2)
     Vr_assumed, Vi_assumed, busphase_map_assumed = run_newton_powerflow_3p(mpc_assumed, tol=1e-6, max_iter=20)
     x_f_assumed = Vr_assumed + 1j * Vi_assumed

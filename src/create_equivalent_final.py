@@ -11,6 +11,15 @@ output_dss_file = "Secondary_Equivalent.dss"
 EXCLUDE_SPOT_BY_NAME = True
 SPOT_NAME_REGEX = re.compile(r"^S\d+\b")
 
+# Override data paths to use repo's data directory
+try:
+    from config import DATA_DIR
+    master_dss_file_path = os.fspath(DATA_DIR / "Master.dss")
+    output_dss_file = os.fspath(DATA_DIR / "Secondary_Equivalent.dss")
+except Exception:
+    # Fallback to existing values if config is unavailable
+    pass
+
 # --- Small data class ---
 class TheveninSource:
     """Hold equivalent source data for a boundary bus."""
