@@ -34,31 +34,31 @@ and the low-voltage IEEE 342-node test system.
 
 State estimation is posed as the weighted least-squares problem
 
-\[
-J(x) = (z - h(x))^{\mathsf{T}} W (z - h(x))
-\]
+$$
+J(x) = (z - h(x))^{\mathrm T} \, W \, (z - h(x))
+$$
 
 subject to a set of equality constraints $g(x) = 0$. The associated Lagrangian
 is
 
-\[
-\mathcal{L}(x, \lambda) = J(x) + \lambda^{\mathsf{T}} g(x)
-\]
+$$
+\mathcal{L}(x, \lambda) = J(x) + \lambda^{\mathrm T} g(x)
+$$
 
 The sensitivity of each constraint is evaluated through normalized Lagrangian
 multipliers
 
-\[
+$$
 \tilde{\lambda}_i = \frac{\lambda_i}{\sqrt{\mathrm{Var}(\lambda_i)}}
-\]
+$$
 
-For a group of related constraints, the Mahalanobis-distance based index is
+For a group of related constraints, the Mahalanobis-distance–based index is
 computed as
 
-\[
-D_g = \sqrt{\tilde{\boldsymbol{\lambda}}_g^{\mathsf{T}} \Sigma_g^{-1}
+$$
+D_g = \sqrt{ \tilde{\boldsymbol{\lambda}}_g^{\mathrm T} \, \Sigma_g^{-1} \,
 \tilde{\boldsymbol{\lambda}}_g }
-\]
+$$
 
 where $\tilde{\boldsymbol{\lambda}}_g$ collects the normalized multipliers for
 group $g$ and $\Sigma_g$ is their covariance matrix. High values of $D_g$
