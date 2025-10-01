@@ -1,0 +1,18 @@
+# Core scientific stack
+numpy>=1.22
+scipy>=1.8
+
+# OpenDSS Python interface
+OpenDSSDirect.py
+
+# Visualization (optional, for src/vis/visualization.py)
+matplotlib>=3.5
+networkx>=2.8
+
+# GPU acceleration (required by current code; choose the right wheel)
+cupy
+# Or replace the line above with the variant matching your environment:
+# cupy-cuda12x
+# cupy-cuda11x
+# cupy-rocm-5-6
+# If unsure, see: https://docs.cupy.dev/en/stable/install.html

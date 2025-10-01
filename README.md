@@ -1,105 +1,173 @@
 # Three-phase Normalized Lagrangian Multiplier State Estimation
 
-This repository implements the Mahalanobis-distance based grouped index for
-three-phase, unbalanced distribution system state estimation. The methodology
-relies on **normalized Lagrangian multipliers (NLM)** to quantify constraint
-sensitivity, enabling efficient detection of abnormal conditions in large-scale
-networks.
+Mahalanobis-distance based grouped indices for three-phase, unbalanced distribution system state estimation. The method uses normalized Lagrangian multipliers (NLMs) to quantify constraint sensitivity and ranks likely parameter/location errors at scale.
 
-The codebase couples the state estimator and three-phase power-flow solver with
-[OpenDSS](https://github.com/dss-extensions/OpenDSSDirect.py) via the
-`opendssdirect.py` interface, allowing validation on both the IEEE 4-node feeder
-and the low-voltage IEEE 342-node test system.
+The estimator and the three-phase power-flow routines interface with OpenDSS via OpenDSSDirect.py, enabling end-to-end studies on included primary and secondary feeders.
 
-## Repository structure
+## Highlights
+
+- Three-phase DSSE with polar states and zero-injection constraints
+- Normalized Lagrangian multipliers (NLM) for parameter and constraint saliency
+- Grouped Mahalanobis distance per line: line parameters plus both terminal shunts
+- OpenDSS-backed parsing and power flow; automatic switch merging for near-zero-impedance switches
+- Optional GPU acceleration via CuPy with CPU fallback
+- Built-in scenarios: 4-bus demo, primary feeder runs, high-impedance fault (HIF), cable burnout, open-main
+
+## Repository Structure
 
 ```
 .
-├── data/                  # Measurement data and configuration files
-├── docs/                  # Project documentation and supplementary material
-├── notebooks/             # Interactive exploration and validation notebooks
-├── results/               # Saved experiment results
-├── src/                   # Source code for estimation and diagnostics
-│   ├── cal_pf.py          # Three-phase power-flow calculation
-│   ├── case_4.py          # IEEE 4-node validation example
-│   ├── case_390.py        # IEEE 342-node low-voltage study
-│   ├── lagrangian_m.py    # Normalized Lagrangian multiplier utilities
-│   ├── wls_estimation_p.py# Weighted least-squares state estimator
-│   ├── utilities/         # Helper functions for OpenDSS interaction
-│   └── vis/               # Plotting utilities and figure scripts
-└── README.md              # Project overview (this file)
+├── data/                  # DSS models, line constants, coordinates
+├── docs/                  # Notes and experiment summaries
+├── notebooks/             # Optional interactive exploration
+├── results/               # Output figures and generated DSS variants
+├── src/                   # Estimator, PF, parsers, scenarios, and utilities
+│   ├── cal_pf.py          # Three‑phase Newton power‑flow
+│   ├── case_4.py          # 4‑bus demo incl. Kron reduction checks
+│   ├── case_390.py        # Primary feeder example (Master.dss)
+│   ├── case390_burnout.py # Cable burnout scenario
+│   ├── case390_open_main.py # Open‑main scenario
+│   ├── case390_HIF.py     # One‑off HIF scenario
+│   ├── run_batched_HIF.py # Batch HIF detection across families (group index)
+│   ├── run_batched_test.py      # Representative burnout tests over groups
+│   ├── run_two_cables_batch_test.py # Two‑cable simultaneous burnout tests
+│   ├── lagrangian_m.py    # DSSE + NLM and grouped χ² indices
+│   ├── wls_estimation_p.py# WLS state estimator (polar)
+│   ├── utilities/         # Jacobians, measurement model, reporting helpers
+│   └── vis/               # Network visualization utilities
+└── README.md
 ```
 
-## Mathematical formulation
+## Requirements
 
-State estimation is posed as the weighted least-squares problem
+- Python 3.9+
+- Packages (install via pip):
+  - Core: `numpy`, `scipy`, `opendssdirect`
+  - Visualization: `matplotlib`, `networkx` (optional for `src/vis/visualization.py`)
+  - GPU (optional): `cupy` wheels matched to your CUDA, e.g. `cupy-cuda12x` or `cupy-cuda11x`
+  - Graphviz (optional): for nicer layouts in visualization; falls back to spring layout if missing
 
-$$
-J(x) = (z - h(x))^{\mathrm T} \, W \, (z - h(x))
-$$
+Quick install example (via requirements file):
 
-subject to a set of equality constraints $g(x) = 0$. The associated Lagrangian
-is
+```bash
+python -m venv .venv && source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-$$
-\mathcal{L}(x, \lambda) = J(x) + \lambda^{\mathrm T} g(x)
-$$
+Quick install example (CPU-only, without requirements file):
 
-The sensitivity of each constraint is evaluated through normalized Lagrangian
-multipliers
+```bash
+python -m venv .venv && source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install numpy scipy opendssdirect matplotlib networkx
+```
 
-$$
-\tilde{\lambda}_i = \frac{\lambda_i}{\sqrt{\mathrm{Var}(\lambda_i)}}
-$$
+Optional GPU acceleration with CuPy (choose the right wheel for your CUDA):
 
-For a group of related constraints, the Mahalanobis-distance–based index is
-computed as
+```bash
+pip install cupy-cuda12x  # or cupy-cuda11x, or plain cupy for ROCm/CPU
+```
 
-$$
-D_g = \sqrt{ \tilde{\boldsymbol{\lambda}}_g^{\mathrm T} \, \Sigma_g^{-1} \,
-\tilde{\boldsymbol{\lambda}}_g }
-$$
+Note: CuPy must be installed for the current code to import. When GPU factorization is unavailable at runtime, the solver falls back to SciPy CPU factorization, but the CuPy import is still required.
 
-where $\tilde{\boldsymbol{\lambda}}_g$ collects the normalized multipliers for
-group $g$ and $\Sigma_g$ is their covariance matrix. High values of $D_g$
-indicate anomalous behavior in the corresponding parameter set.
+## Mathematical Notes
 
-## Getting started
+State estimation is posed as the weighted least-squares problem with equality constraints:
 
-1. Install dependencies (Python 3.9+, `opendssdirect.py`).
-2. Run an example study from the repo root (paths are resolved automatically):
-   ```bash
-   python src/case_4.py   # IEEE 4-node test system
-   python src/case_390.py # IEEE 342-node low-voltage network
-   ```
+J(x) = (z − h(x))ᵀ W (z − h(x))  s.t.  g(x) = 0
 
-These scripts perform a three-phase power flow, execute the state estimator, and
-compute grouped indices for constraint monitoring.
+with Lagrangian L(x, λ) = J(x) + λᵀ g(x). The normalized multiplier for constraint i is
 
-## Paths and config
+λ̃ᵢ = λᵢ / sqrt(Var(λᵢ)).
 
-- Centralized path configuration lives in `src/config.py`.
-  - `DATA_DIR` points to the repo’s `data/` folder.
-  - `RESULTS_DIR` points to the repo’s `results/` folder.
-  - Helpers `data_file(name)` and `result_file(name)` build absolute paths.
+For a set of related constraints/parameters g, we compute a group index via a Mahalanobis distance:
 
-- Example usage in code: `os.fspath(DATA_DIR / "Master.dss")`
-  - `DATA_DIR / "Master.dss"` uses `pathlib` to form the path object.
-  - `os.fspath(...)` converts that path object to a plain string, which many
-    libraries (like OpenDSSDirect) expect.
+D_g = sqrt( λ̃_gᵀ Σ_g⁻¹ λ̃_g ).
 
-- If your data lives elsewhere, edit `src/config.py` (or override at runtime)
-  and all scripts will pick it up without further edits.
+In code, line-group indices combine a line’s impedance parameters with shunt admittances at both terminals, improving localization robustness.
+
+Measurement model (per-node ordering): h(x) = [P_inj, Q_inj, |V|] with length 3·N; see `src/utilities/mea_fun.py:27`.
+
+## Quick Start
+
+From the repository root, run any scenario. Paths are resolved through the central config.
+
+```bash
+python src/case_4.py           # 4‑bus demo + Kron reduction checks
+python src/case_390.py         # Primary feeder baseline
+python src/case390_HIF.py      # One‑off HIF on primary/secondary
+python src/case390_burnout.py  # Burnout scenario on primary
+python src/case390_open_main.py# Open‑main scenario on primary
+```
+
+Each script runs a three‑phase power flow, builds the measurement vector, performs DSSE, and prints NLM/χ²‑group summaries.
+
+## Batch Experiments
+
+- Batch HIF detection across secondary families using grouped indices:
+
+  ```bash
+  python src/run_batched_HIF.py
+  ```
+
+  Outputs a summary to stdout and writes CSV results to `src/hif_batch_tmp/hif_batch_results_group.csv`.
+
+- Representative cable burnout across parallel line groups:
+
+  ```bash
+  python src/run_batched_test.py
+  ```
+
+  Prints per‑group outcomes and a final success‑rate report.
+
+- Two‑cable simultaneous burnout stress test:
+
+  ```bash
+  python src/run_two_cables_batch_test.py
+  ```
+
+Experiment notes and detection-rate snapshots are in `docs/` (e.g., `docs/New Text Document (6).md`).
+
+## Paths and Config
+
+- Centralized path configuration: `src/config.py:1`
+  - `DATA_DIR` → `data/`
+  - `RESULTS_DIR` → `results/`
+  - Helpers: `data_file(name)`, `result_file(name)`
+- Example: `os.fspath(DATA_DIR / "Master.dss")` converts a `pathlib.Path` to a string for OpenDSS.
+- If your DSS models live elsewhere, edit `src/config.py` and the rest of the code will follow.
 
 ## Visualization
 
-To render a simple network overview from the OpenDSS model and save an image:
+Render and save a simple network overview from the OpenDSS model:
 
 ```bash
 python src/vis/visualization.py
 ```
 
-The script compiles `data/Master.dss`, builds a graph (buses + lines/transformers),
-colors buses by voltage category (HV/MV/SN/LV), highlights bridging nodes, and
-saves `results/vis_overview.png`.
+This compiles `data/Master.dss`, builds a graph (buses + lines/transformers), colors buses by voltage category (HV/MV/SN/LV), highlights bridging nodes, and saves `results/vis_overview.png`.
 
+## Tips and Troubleshooting
+
+- Switch merging threshold: adjust `switch_threshold` in scripts that call `merge_closed_switches_in_mpc_and_dss(...)` to reflect your model’s near‑zero‑ohm switches.
+- GPU optional: CuPy acceleration is used when available; otherwise, a SciPy CPU solve is used automatically.
+- Measurement noise: batch/HIF scripts expose `STD_P`, `STD_Q`, and `STD_V` at the top for quick sensitivity studies.
+- Graphviz optional: visualization falls back to a spring layout if pygraphviz/graphviz is not installed.
+- Reproducibility: batch HIF experiments set a fixed RNG seed; see `src/run_batched_HIF.py:31`.
+
+## Acknowledgments
+
+This work builds on OpenDSS and the dss-extensions OpenDSSDirect.py interface. If you use this repository in academic work, please cite your usage accordingly and reference OpenDSS.
+
+## How to Contribute
+
+- Open an issue to discuss bugs, ideas, or feature requests.
+- Fork the repo and create a branch for your change (`feat/...`, `fix/...`).
+- Keep changes focused; follow existing code style and structure.
+- Test your scenario locally (e.g., `case_4.py`, `case_390.py`, batch scripts) and include a short summary in the PR description.
+- Submit a Pull Request referencing the related issue when applicable.
+
+## License
+
+MIT License. You are free to use, modify, and distribute this software with attribution and without warranty.
