@@ -1,0 +1,18 @@
+!--- OpenDSS Linecodes file generated from Show LINECONSTANTS command
+!--- Frequency = 60 Hz, Earth resistivity = 100 ohm-m
+!--- Earth Model = Deri
+
+New Linecode.trans nphases=3  Units=mi
+~ Rmatrix=[0.14519  |0.0925205  0.14519  |0.0925186  0.0925205  0.14519  ]
+~ Xmatrix=[1.41011  |0.695545  1.41011  |0.611437  0.695545  1.41011  ]
+~ Cmatrix=[12.4232  |-3.1131  12.989  |-1.63202  -3.1131  12.4232  ]
+
+New Linecode.pri nphases=3  Units=mi
+~ Rmatrix=[0.13018  |-4.14314E-006  0.130177  |-8.11898E-006  -4.14314E-006  0.13018  ]
+~ Xmatrix=[0.0668195  |-0.000224891  0.066985  |-4.2835E-005  -0.000224891  0.0668195  ]
+~ Cmatrix=[566.228  |0  566.228  |0  0  566.228  ]
+
+New Linecode.sec nphases=3  Units=mi
+~ Rmatrix=[0.33619  |0.128579  0.328163  |0.132719  0.128579  0.33619  ]
+~ Xmatrix=[0.510307  |0.268686  0.575146  |0.193614  0.268686  0.510307  ]
+~ Cmatrix=[34.0866  |-12.0789  34.1952  |-4.12143  -12.0789  34.0866  ]

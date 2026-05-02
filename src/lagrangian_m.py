@@ -2,10 +2,73 @@ import numpy as np
 import scipy.sparse as sps
 from scipy.sparse.linalg import splu, LinearOperator
 import scipy.sparse.linalg as spla
-import cupy as cp
 from scipy.linalg import solve_triangular
-import cupyx.scipy.sparse as cpsparse
-import cupyx.scipy.sparse.linalg as cpsparse_linalg
+
+# Optional GPU (CuPy) acceleration with CPU fallback
+try:
+    import cupy as _cp  # type: ignore
+    try:
+        # Ensure a CUDA device is available; otherwise, fall back to CPU
+        _ = _cp.cuda.runtime.getDeviceCount()
+        cp = _cp
+        import cupyx.scipy.sparse as cpsparse  # type: ignore
+        import cupyx.scipy.sparse.linalg as cpsparse_linalg  # type: ignore
+    except Exception:
+        raise ImportError
+except Exception:
+    import numpy as _np
+
+    class _CPShim:
+        def __init__(self, np_mod):
+            self._np = np_mod
+            self.float64 = np_mod.float64
+            # Expose linalg namespace with matching exception type
+            self.linalg = type(
+                'linalg',
+                (),
+                {
+                    'cholesky': staticmethod(np_mod.linalg.cholesky),
+                    'LinAlgError': np_mod.linalg.LinAlgError,
+                },
+            )
+
+        def asarray(self, a, dtype=None):
+            return self._np.asarray(a, dtype=dtype)
+
+        def asnumpy(self, a):
+            return self._np.asarray(a)
+
+        def zeros(self, shape, dtype=None):
+            return self._np.zeros(shape, dtype=dtype)
+
+        def concatenate(self, seq, axis=0):
+            return self._np.concatenate(seq, axis=axis)
+
+        def eye(self, n, dtype=None):
+            return self._np.eye(n, dtype=dtype)
+
+        def diag(self, a):
+            return self._np.diag(a)
+
+        def finfo(self, dtype):
+            return self._np.finfo(dtype)
+
+        def arange(self, n):
+            return self._np.arange(n)
+
+        def sqrt(self, x):
+            return self._np.sqrt(x)
+
+    cp = _CPShim(_np)
+
+    # Stubs for cupyx sparse modules so CPU fallback path is used
+    class _CPSparseStub:  # minimal attribute for type compatibility
+        def __getattr__(self, name):
+            raise RuntimeError("cupyx is unavailable; this stub should not be used."
+                               " CPU fallback will be taken.")
+
+    cpsparse = _CPSparseStub()  # noqa: F841
+    cpsparse_linalg = _CPSparseStub()  # noqa: F841
 from utilities.mea_fun import measurement_function
 from utilities.make_jacobian import jacobian
 from utilities.make_jacobian_p import jacobian_line_params, jacobian_shunt_params
@@ -674,10 +737,12 @@ def run_lagrangian_polar(
         print("Top 5 most likely erroneous line groups:")
         for i_line, d_val in sorted_distances[:5]:
             fbus, tbus = int(mpc['line3p'][i_line][1]), int(mpc['line3p'][i_line][2])
-            print(f"  - Line {i_line+156} ({fbus}-{tbus}): χ² - k = {d_val:.4f}")
+            line_name = mpc['line3p'][i_line][6]
+            print(f"  - Line {i_line} (DSS name: {line_name}, buses {fbus}-{tbus}): χ² - k = {d_val:.4f}")
         best_idx, best_val = sorted_distances[0]
         fbus_top, tbus_top = int(mpc['line3p'][best_idx][1]), int(mpc['line3p'][best_idx][2])
-        print(f"\nConclusion: Line {best_idx+156} ({fbus_top}-{tbus_top}) "
+        line_name = mpc['line3p'][best_idx][6]
+        print(f"\nConclusion: Line {best_idx} (DSS name: {line_name}, buses {fbus_top}-{tbus_top}) "
               f"(its params + terminal shunts) has the largest group score ({best_val:.4f}).")
     else:
         print("Could not compute line-group Mahalanobis distances.")

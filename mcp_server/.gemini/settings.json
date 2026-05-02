@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "wls-nlm": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with",
+        "fastmcp",
+        "fastmcp",
+        "run",
+        "/home/yifeihsu/Three_phase_NLM/mcp_server/wls_nlm_server.py"
+      ]
+    }
+  }
+}

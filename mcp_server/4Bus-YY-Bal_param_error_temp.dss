@@ -1,0 +1,8 @@
+Clear
+Redirect "/home/yifeihsu/Three_phase_NLM/data/4Bus-YY-Bal.DSS"
+New LineCode.NLM nphases=3 units=mi
+~ Rmatrix = [0.5033  |0.1715  0.5133  |0.1688  0.1718  0.5076]
+~ Xmatrix = [1.1859  |0.5518  1.1530  |0.4234  0.4660  1.1716]
+~ Cmatrix = [16.57   |-5.35    17.46   |-2.04    -3.40    15.76 ]
+Edit line.2 Linecode=NLM
+Solve
